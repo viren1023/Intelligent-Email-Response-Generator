@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.api.routes.auth import get_current_user
@@ -6,13 +6,23 @@ from app.models.user import User, OAuthAccount
 from app.models.email import Email, AIResponse
 from app.services.gmail_service import GmailService, get_gmail_service
 from pydantic import BaseModel
+from typing import Optional
 import datetime
 
 router = APIRouter()
 
+# Gmail query per inbox tab
+TAB_QUERIES = {
+    "primary": "in:inbox -category:promotions -category:social -category:updates",
+    "unread":   "is:unread",
+    "sent":     "in:sent",
+    "all":      "in:anywhere -in:spam -in:trash",
+}
+
 class SendReplyRequest(BaseModel):
     response_id: int
     edited_text: str
+
 
 @router.get("/unread")
 async def get_unread_emails(
@@ -28,6 +38,47 @@ async def get_unread_emails(
         return {"emails": emails}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch emails: {str(e)}")
+
+@router.get("/all")
+async def get_all_emails(
+    tab: str = Query(default="primary", pattern="^(primary|unread|sent|all)$"),
+    page_token: Optional[str] = Query(default=None),
+    max_results: int = Query(default=20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Paginated full inbox — supports primary/unread/sent/all tabs."""
+    oauth_acc = db.query(OAuthAccount).filter(
+        OAuthAccount.user_id == current_user.id,
+        OAuthAccount.provider == "google"
+    ).first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+
+    query = TAB_QUERIES.get(tab, TAB_QUERIES["primary"])
+
+    try:
+        emails, next_page_token = GmailService.list_emails(
+            oauth_acc, query=query, page_token=page_token, max_results=max_results
+        )
+
+        # Annotate with AI-replied badge from local DB
+        sent_gmail_ids = {
+            row.gmail_message_id
+            for row in db.query(Email).filter(Email.user_id == current_user.id).all()
+            if any(r.status == "SENT" for r in row.ai_responses)
+        }
+        for email in emails:
+            email["ai_replied"] = email["id"] in sent_gmail_ids
+
+        return {
+            "emails": emails,
+            "next_page_token": next_page_token,
+            "tab": tab,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch emails: {str(e)}")
+
 
 @router.get("/{email_id}/thread")
 async def get_email_thread(

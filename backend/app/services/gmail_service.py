@@ -22,16 +22,27 @@ def get_gmail_service(oauth_account: OAuthAccount):
 
 class GmailService:
     @staticmethod
-    def get_unread_emails(oauth_account: OAuthAccount, max_results=20):
+    def list_emails(oauth_account: OAuthAccount, query: str, page_token: str = None, max_results: int = 20):
+        """Generic paginated email list. Returns (email_list, next_page_token)."""
         service = get_gmail_service(oauth_account)
-        results = service.users().messages().list(userId='me', q="is:unread -category:promotions", maxResults=max_results).execute()
+        
+        params = {"userId": "me", "q": query, "maxResults": max_results}
+        if page_token:
+            params["pageToken"] = page_token
+            
+        results = service.users().messages().list(**params).execute()
         messages = results.get('messages', [])
+        next_page_token = results.get('nextPageToken')
         
         email_list = []
         for msg in messages:
-            msg_detail = service.users().messages().get(userId='me', id=msg['id'], format='metadata', metadataHeaders=['Subject', 'From', 'Date']).execute()
+            msg_detail = service.users().messages().get(
+                userId='me', id=msg['id'], format='metadata',
+                metadataHeaders=['Subject', 'From', 'To', 'Date']
+            ).execute()
             
             headers = {h['name'].lower(): h['value'] for h in msg_detail['payload']['headers']}
+            label_ids = msg_detail.get('labelIds', [])
             
             email_list.append({
                 'id': msg['id'],
@@ -39,10 +50,22 @@ class GmailService:
                 'snippet': msg_detail.get('snippet', ''),
                 'subject': headers.get('subject', ''),
                 'from': headers.get('from', ''),
-                'date': headers.get('date', '')
+                'to': headers.get('to', ''),
+                'date': headers.get('date', ''),
+                'is_unread': 'UNREAD' in label_ids,
+                'is_sent': 'SENT' in label_ids,
             })
             
-        return email_list
+        return email_list, next_page_token
+
+    @staticmethod
+    def get_unread_emails(oauth_account: OAuthAccount, max_results=20):
+        emails, _ = GmailService.list_emails(
+            oauth_account,
+            query="is:unread -category:promotions",
+            max_results=max_results
+        )
+        return emails
 
     @staticmethod
     def get_thread(oauth_account: OAuthAccount, thread_id: str):
