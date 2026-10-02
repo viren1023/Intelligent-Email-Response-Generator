@@ -29,5 +29,9 @@ export const responseService = {
   getDetail: async (id: number): Promise<ResponseHistoryDetail> => {
     const res = await api.get(`/api/responses/${id}`);
     return res.data;
+  },
+  autoSaveDraft: async (id: number, edited_text: string): Promise<{ status: string; updated_at: string }> => {
+    const res = await api.patch(`/api/responses/${id}`, { edited_text });
+    return res.data;
   }
 };

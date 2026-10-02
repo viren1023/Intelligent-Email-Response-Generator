@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.database import Base
@@ -16,6 +17,8 @@ class Email(Base):
     snippet = Column(String)
     received_at = Column(DateTime(timezone=True), index=True)
     is_read = Column(Boolean, default=False, index=True)
+    urgency = Column(String, nullable=True)          # URGENT | IMPORTANT | NORMAL
+    quick_replies = Column(JSONB, nullable=True)     # cached ["...", "...", "..."]
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -28,9 +31,11 @@ class AIResponse(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     email_id = Column(Integer, ForeignKey("emails.id", ondelete="CASCADE"))
-    generated_text = Column(String)
-    edited_text = Column(String, nullable=True)
+    generated_text = Column(Text)
+    edited_text = Column(Text, nullable=True)
     model_name = Column(String)
+    tone = Column(String, nullable=True)             # professional | friendly | concise | formal | custom
+    generation_metadata = Column(JSONB, nullable=True)
     generation_time = Column(Integer, nullable=True)
     status = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -38,3 +43,4 @@ class AIResponse(Base):
 
     user = relationship("User", back_populates="ai_responses")
     email = relationship("Email", back_populates="ai_responses")
+

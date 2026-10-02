@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from app.api.routes import auth, emails, ai, responses
+from app.api.routes import auth, emails, ai, responses, settings as settings_route
 from app.core.config import settings
 
 app = FastAPI(title="Intelligent Email Assistant API")
@@ -20,6 +20,8 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(emails.router, prefix="/api/emails", tags=["emails"])
 app.include_router(ai.router, prefix="/api/emails", tags=["ai"])
 app.include_router(responses.router, prefix="/api/responses", tags=["responses"])
+app.include_router(settings_route.router, prefix="/api/settings", tags=["settings"])
+
 
 @app.get("/")
 def read_root():
