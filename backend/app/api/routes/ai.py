@@ -57,9 +57,9 @@ def get_user_llm_config(current_user: User):
     prefs = current_user.preferences or {}
     provider = prefs.get("active_provider", settings.active_provider)
     if provider == "gemini":
-        model_name = prefs.get("gemini_model", "gemini-1.5-flash")
-        if not model_name or not model_name.startswith("gemini-1."):
-            model_name = "gemini-1.5-flash"
+        model_name = prefs.get("gemini_model", "gemini-2.5-flash")
+        if not model_name or "gemini-1." in model_name or "gemini-2.0" in model_name:
+            model_name = "gemini-2.5-flash"
     else:
         model_name = prefs.get("ollama_model", settings.ollama_model)
     return provider, model_name

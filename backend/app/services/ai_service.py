@@ -40,25 +40,38 @@ Rules:
             
         prompt += f"\nConversation:\n{conversation_text}\n\nReply:"
         return prompt
-
     @staticmethod
     def _sanitize_gemini_model(model_name: Optional[str]) -> str:
-        if not model_name or not model_name.startswith("gemini-1."):
-            return "gemini-1.5-flash"
-        return model_name.strip()
+        if not model_name or not model_name.strip():
+            return "gemini-2.5-flash"
+        name = model_name.strip()
+        if "gemini-1." in name or "gemini-2.0" in name:
+            return "gemini-2.5-flash"
+        return name
+
+    @staticmethod
+    def classify_gemini_error(status_code: int, error_text: str, model: str) -> str:
+        if status_code == 429 or "RESOURCE_EXHAUSTED" in error_text:
+            return f"[Quota Exceeded: Usage limit reached for '{model}'. Google has blocked requests for this model until quota resets or billing is updated.]"
+        elif status_code == 404 or "NOT_FOUND" in error_text:
+            return f"[Model Unavailable: '{model}' is deprecated or not available for your account. Please choose an active model in Settings.]"
+        elif status_code == 503 or "UNAVAILABLE" in error_text:
+            return f"[Model Busy: '{model}' is currently experiencing high load or is temporarily unavailable. Please retry shortly.]"
+        elif status_code in (400, 403) or "API_KEY_INVALID" in error_text:
+            return f"[Authentication Error: Invalid Gemini API key or unauthorized permissions. Check Settings.]"
+        return f"[Gemini Error (HTTP {status_code}): {error_text[:150]}]"
 
     @staticmethod
     async def _call_gemini_api(prompt: str, primary_model: Optional[str] = None) -> str:
         sanitized = AIService._sanitize_gemini_model(primary_model)
-        models_to_try = [sanitized, "gemini-1.5-flash", "gemini-1.5-pro"]
-        candidate_models = []
-        for m in models_to_try:
-            if m and m not in candidate_models:
-                candidate_models.append(m)
+        models_to_try = [sanitized]
+        # Allow fallback to gemini-2.5-flash only if primary is transiently busy (503)
+        if sanitized != "gemini-2.5-flash":
+            models_to_try.append("gemini-2.5-flash")
 
         last_error = ""
         async with httpx.AsyncClient(timeout=60) as client:
-            for model in candidate_models:
+            for model in models_to_try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
                 try:
                     res = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -69,8 +82,17 @@ Rules:
                             parts = candidates[0].get("content", {}).get("parts", [])
                             if parts:
                                 return parts[0].get("text", "").strip()
-                    last_error = f"Model '{model}' returned HTTP {res.status_code}: {res.text[:150]}"
+                    # Classify error
+                    err_msg = AIService.classify_gemini_error(res.status_code, res.text, model)
+                    last_error = err_msg
+                    # If permanent error (404, 429, 400, 403), stop immediately and surface it
+                    if res.status_code != 503:
+                        raise Exception(err_msg)
+                except httpx.HTTPError as ex:
+                    last_error = f"[Network/HTTP Error calling '{model}': {str(ex)}]"
                 except Exception as ex:
+                    if str(ex).startswith("["):
+                        raise ex
                     last_error = str(ex)
 
         raise Exception(f"Gemini API Error: {last_error}")
@@ -283,7 +305,11 @@ Return ONLY the raw JSON object. Do not wrap in markdown or code blocks.
             async with httpx.AsyncClient(timeout=60) as client:
                 try:
                     async with client.stream("POST", url, json={"contents": [{"parts": [{"text": prompt}]}]}) as response:
-                        response.raise_for_status()
+                        if response.status_code != 200:
+                            err_body = await response.aread()
+                            err_msg = AIService.classify_gemini_error(response.status_code, err_body.decode('utf-8', errors='replace'), target_model)
+                            yield f"\n{err_msg}"
+                            return
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
                                 try:
@@ -623,7 +649,11 @@ CRITICAL PERSPECTIVE RULE: When drafting or generating an email reply, you must 
             async with httpx.AsyncClient(timeout=60) as client:
                 try:
                     async with client.stream("POST", url, json={"contents": [{"parts": [{"text": formatted_prompt}]}]}) as response:
-                        response.raise_for_status()
+                        if response.status_code != 200:
+                            err_body = await response.aread()
+                            err_msg = AIService.classify_gemini_error(response.status_code, err_body.decode('utf-8', errors='replace'), target_model)
+                            yield f"\n{err_msg}"
+                            return
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
                                 try:

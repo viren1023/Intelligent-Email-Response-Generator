@@ -14,7 +14,7 @@ router = APIRouter()
 class PreferencesUpdateRequest(BaseModel):
     active_provider: Optional[str] = "ollama"
     ollama_model: Optional[str] = "mistral:7b"
-    gemini_model: Optional[str] = "gemini-1.5-flash"
+    gemini_model: Optional[str] = "gemini-2.5-flash"
     default_tone: Optional[str] = "professional"
     custom_tone_prompt: Optional[str] = ""
 
@@ -28,9 +28,9 @@ async def get_preferences(current_user: User = Depends(get_current_user)):
     has_key = bool(settings.gemini_api_key)
     masked_key = f"••••••••••••{settings.gemini_api_key[-4:]}" if (has_key and len(settings.gemini_api_key) >= 4) else ("••••••••" if has_key else "")
     
-    g_model = user_prefs.get("gemini_model", "gemini-1.5-flash")
-    if not g_model or not g_model.startswith("gemini-1."):
-        g_model = "gemini-1.5-flash"
+    g_model = user_prefs.get("gemini_model", "gemini-2.5-flash")
+    if not g_model or "gemini-1." in g_model or "gemini-2.0" in g_model:
+        g_model = "gemini-2.5-flash"
 
     return {
         "preferences": {

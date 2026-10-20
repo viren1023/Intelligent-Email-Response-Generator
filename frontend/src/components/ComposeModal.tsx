@@ -182,14 +182,14 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
           });
         } else {
           modelOptions.push({
-            name: 'gemini-1.5-flash',
+            name: 'gemini-2.5-flash',
             provider: 'gemini',
-            label: 'Gemini: 1.5 Flash',
+            label: 'Gemini: 2.5 Flash',
           });
           modelOptions.push({
-            name: 'gemini-1.5-pro',
+            name: 'gemini-flash-lite-latest',
             provider: 'gemini',
-            label: 'Gemini: 1.5 Pro',
+            label: 'Gemini: Flash Lite',
           });
         }
       }
@@ -217,7 +217,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
       const activeProv = prefData?.preferences?.active_provider || 'gemini';
       const activeModel =
         activeProv === 'gemini'
-          ? prefData?.preferences?.gemini_model || 'gemini-1.5-flash'
+          ? prefData?.preferences?.gemini_model || 'gemini-2.5-flash'
           : prefData?.preferences?.ollama_model || 'mistral';
 
       const match = modelOptions.find(

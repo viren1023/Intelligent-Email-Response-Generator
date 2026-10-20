@@ -18,10 +18,9 @@ class Settings(BaseSettings):
     ollama_timeout: int = Field(default=120, env="OLLAMA_TIMEOUT")
 
     gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
-    gemini_models: str = Field(default="gemini-1.5-flash,gemini-1.5-pro,gemini-2.0-flash,gemini-2.0-flash-lite", env="GEMINI_MODELS")
+    gemini_models: str = Field(default="gemini-2.5-flash,gemini-flash-lite-latest,gemini-3-flash-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-3.6-flash", env="GEMINI_MODELS")
     active_provider: str = Field(default="ollama", env="ACTIVE_PROVIDER")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()
-

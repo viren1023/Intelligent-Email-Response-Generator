@@ -61,7 +61,7 @@ const Settings: React.FC = () => {
   const [prefs, setPrefs] = useState<UserPreferences>({
     active_provider: 'ollama',
     ollama_model: 'mistral',
-    gemini_model: 'gemini-1.5-flash',
+    gemini_model: 'gemini-2.5-flash',
     default_tone: 'professional',
     custom_tone_prompt: '',
   });
