@@ -175,7 +175,8 @@ def get_email_thread(
                             text_plain = decoded
                     except Exception:
                         pass
-                return text_plain or text_html
+                # Prefer rich styled HTML (with images & action buttons) for UI viewing; fall back to text_plain
+                return text_html or text_plain
 
             body = clean_email_content(extract_body(msg['payload']))
                 

@@ -29,7 +29,9 @@ export function cleanEmailRaw(text: string): string {
       const urlMatch = label.match(/https?:\/\/[^\s"'<>]+/);
       const targetUrl = urlMatch ? urlMatch[0] : url.replace(/%3Cem%20class=/gi, '').trim();
       return `<${targetUrl}>`;
-    });
+    })
+    // 6. Clean stale literal placeholder tokens like "( LINK_BLOCK_0 )" or "LINK_BLOCK_1"
+    .replace(/\(?\s*LINK_BLOCK_\d+\s*\)?/gi, '');
 
   return cleaned;
 }
@@ -39,17 +41,17 @@ function parseMarkdownToHtml(raw: string): string {
 
   let text = cleanEmailRaw(raw);
 
-  // 1. Preserve Code blocks
+  // 1. Preserve Code blocks with collision-proof token
   const codeBlocks: string[] = [];
   text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
     const idx = codeBlocks.length;
     codeBlocks.push(
       `<pre class="my-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono overflow-x-auto"><code class="language-${lang}">${code.trim()}</code></pre>`
     );
-    return `__CODE_BLOCK_${idx}__`;
+    return `@@PH_CODE_${idx}_TOKEN@@`;
   });
 
-  // 2. Preserve Links (Markdown links and Autolinks) with unique placeholders
+  // 2. Preserve Links (Markdown links and Autolinks) with collision-proof token
   const links: string[] = [];
   function saveLink(label: string, url: string): string {
     const idx = links.length;
@@ -62,7 +64,7 @@ function parseMarkdownToHtml(raw: string): string {
     links.push(
       `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-brand-purple hover:underline break-all font-medium">${display}</a>`
     );
-    return `__LINK_BLOCK_${idx}__`;
+    return `@@PH_LINK_${idx}_TOKEN@@`;
   }
 
   // Markdown links: [label](url)
@@ -70,6 +72,9 @@ function parseMarkdownToHtml(raw: string): string {
 
   // Autolinks: <https://...>
   text = text.replace(/<((?:https?:\/\/)[^\s>]+)>/g, (_m, url) => saveLink(url, url));
+
+  // Parentheses URLs: ( https://... )
+  text = text.replace(/\(\s*(https?:\/\/[^\s)]+)\s*\)/g, (_m, url) => `(${saveLink(url, url)})`);
 
   // Standalone Raw URLs (not preceded by href= or quotation)
   text = text.replace(/(?<![="'>/])\bhttps?:\/\/[^\s<>\(\)]+/g, (url) => saveLink(url, url));
@@ -82,29 +87,32 @@ function parseMarkdownToHtml(raw: string): string {
   text = text.replace(/^## (.*$)/gim, '<h2 class="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2">$1</h2>');
   text = text.replace(/^# (.*$)/gim, '<h1 class="text-lg font-extrabold text-slate-900 dark:text-white mt-4 mb-2.5">$1</h1>');
 
-  // 5. Inline code: `code`
+  // 5. Horizontal rules: *** or --- or ___
+  text = text.replace(/^\s*(\*\*\*|---|___)\s*$/gm, '<hr class="my-3 border-slate-200 dark:border-slate-800" />');
+
+  // 6. Inline code: `code`
   text = text.replace(/`([^`\n]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-purple-600 dark:text-purple-300 font-mono text-[11px]">$1</code>');
 
-  // 6. Bold: **text** or __text__
+  // 7. Bold: **text** or __text__
   text = text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
   text = text.replace(/(^|[^\w])__(.*?)__([^\w]|$)/g, '$1<strong class="font-bold text-slate-900 dark:text-white">$2</strong>$3');
 
-  // 7. Italic: require non-word boundaries so underscores inside words or URLs are NEVER converted
+  // 8. Italic: require non-word boundaries so underscores inside words or URLs are NEVER converted
   text = text.replace(/(^|[^\w])\*([^\*\n]+)\*([^\w]|$)/g, '$1<em class="italic">$2</em>$3');
   text = text.replace(/(^|[^\w])_([^_\n]+)_([^\w]|$)/g, '$1<em class="italic">$2</em>$3');
 
-  // 8. Strikethrough: ~~text~~
+  // 9. Strikethrough: ~~text~~
   text = text.replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>');
 
-  // 9. Restore Links and Code Blocks
+  // 10. Restore Links and Code Blocks using safe replaceAll
   for (let i = 0; i < links.length; i++) {
-    text = text.replace(`__LINK_BLOCK_${i}__`, links[i]);
+    text = text.replaceAll(`@@PH_LINK_${i}_TOKEN@@`, links[i]);
   }
   for (let i = 0; i < codeBlocks.length; i++) {
-    text = text.replace(`__CODE_BLOCK_${i}__`, codeBlocks[i]);
+    text = text.replaceAll(`@@PH_CODE_${i}_TOKEN@@`, codeBlocks[i]);
   }
 
-  // 10. Process paragraphs & blockquotes & lists
+  // 11. Process paragraphs & blockquotes & lists
   const lines = text.split('\n');
   const cleanedLines: string[] = [];
 
@@ -134,6 +142,14 @@ function parseMarkdownToHtml(raw: string): string {
       if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false; }
       if (inList) { result.push('</ul>'); inList = false; }
       result.push('<div class="h-2"></div>');
+      continue;
+    }
+
+    // Preserve horizontal rules directly
+    if (line.includes('<hr class=')) {
+      if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false; }
+      if (inList) { result.push('</ul>'); inList = false; }
+      result.push(line);
       continue;
     }
 
@@ -181,10 +197,21 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
       lower.includes('<!doctype') ||
       lower.includes('<table') ||
       lower.includes('<tbody') ||
-      (lower.includes('<div') && lower.includes('</div>')) ||
-      (lower.includes('<p>') && lower.includes('</p>')) ||
+      lower.includes('<thead') ||
+      lower.includes('<tr') ||
+      lower.includes('<td') ||
+      lower.includes('<div') ||
+      lower.includes('<p>') ||
+      lower.includes('</p>') ||
+      lower.includes('<p ') ||
+      lower.includes('<span') ||
       lower.includes('<br/>') ||
-      lower.includes('<br>')
+      lower.includes('<br>') ||
+      lower.includes('<br />') ||
+      lower.includes('<img') ||
+      lower.includes('<a href') ||
+      lower.includes('<body') ||
+      lower.includes('<style')
     );
   }, [body]);
 
@@ -197,11 +224,11 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
     return <div className="text-xs text-slate-400 italic">No content available.</div>;
   }
 
-  // If email is already full HTML format (e.g. from Gmail)
+  // If email has rich HTML format (with styling, tables, images)
   if (isHtml) {
     return (
       <div
-        className="email-html-body text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200 overflow-x-auto max-w-full [&_a]:text-brand-purple [&_a]:underline [&_a]:break-all [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+        className="email-html-body text-xs sm:text-sm leading-relaxed text-slate-900 dark:text-slate-100 overflow-x-auto max-w-full [&_img]:max-w-full [&_img]:h-auto [&_img]:inline-block [&_table]:max-w-full [&_a]:text-brand-purple [&_a:not([style])]:underline [&_a:hover]:underline"
         dangerouslySetInnerHTML={{ __html: sanitizedBody }}
       />
     );
