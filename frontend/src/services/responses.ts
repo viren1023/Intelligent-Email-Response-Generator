@@ -4,6 +4,7 @@ export interface ResponseHistoryItem {
   id: number;
   sender: string;
   subject: string;
+  snippet?: string;
   status: string;
   generated_at: string;
   sent_at: string | null;
@@ -24,7 +25,7 @@ export interface ResponseHistoryDetail extends ResponseHistoryItem {
 export const responseService = {
   getHistory: async (): Promise<ResponseHistoryItem[]> => {
     const res = await api.get('/api/responses');
-    return res.data;
+    return Array.isArray(res.data) ? res.data : [];
   },
   getDetail: async (id: number): Promise<ResponseHistoryDetail> => {
     const res = await api.get(`/api/responses/${id}`);

@@ -49,9 +49,21 @@ def extract_thread_text(thread: dict) -> str:
                 body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8', errors='replace')
             except Exception:
                 pass
-            
-        conversation_text += f"\nFrom: {from_header}\n{body}\n{'-'*20}\n"
-    return conversation_text
+        if body:
+            conversation_text += f"From: {from_header}\n\n{body}\n\n{'='*40}\n\n"
+    
+    return conversation_text.strip()
+def get_user_llm_config(current_user: User):
+    prefs = current_user.preferences or {}
+    provider = prefs.get("active_provider", settings.active_provider)
+    if provider == "gemini":
+        model_name = prefs.get("gemini_model", "gemini-1.5-flash")
+        if not model_name or not model_name.startswith("gemini-1."):
+            model_name = "gemini-1.5-flash"
+    else:
+        model_name = prefs.get("ollama_model", settings.ollama_model)
+    return provider, model_name
+
 
 @router.post("/{email_id}/generate-reply")
 async def generate_reply(
@@ -68,13 +80,16 @@ async def generate_reply(
         thread = GmailService.get_thread(oauth_acc, request.thread_id)
         conversation_text = extract_thread_text(thread)
             
-        model_name = (current_user.preferences or {}).get("ollama_model", settings.ollama_model)
+        provider, model_name = get_user_llm_config(current_user)
         start_time = time.time()
         reply_text = await AIService.generate_reply(
             conversation_text=conversation_text,
             custom_instruction=request.custom_instruction,
             tone=request.tone,
-            model_name=model_name
+            user_name=current_user.name or "User",
+            user_email=current_user.email or "",
+            model_name=model_name,
+            provider=provider
         )
         generation_time = int((time.time() - start_time) * 1000)
         
@@ -118,7 +133,7 @@ async def stream_reply(
     try:
         thread = GmailService.get_thread(oauth_acc, request.thread_id)
         conversation_text = extract_thread_text(thread)
-        model_name = (current_user.preferences or {}).get("ollama_model", settings.ollama_model)
+        provider, model_name = get_user_llm_config(current_user)
 
         email = db.query(Email).filter(Email.gmail_message_id == email_id).first()
         if not email:
@@ -152,7 +167,10 @@ async def stream_reply(
                     conversation_text=conversation_text,
                     custom_instruction=request.custom_instruction,
                     tone=request.tone,
-                    model_name=model_name
+                    user_name=current_user.name or "User",
+                    user_email=current_user.email or "",
+                    model_name=model_name,
+                    provider=provider
                 ):
                     accumulated.append(token)
                     yield f"data: {json.dumps({'token': token})}\n\n"
@@ -183,6 +201,12 @@ async def stream_reply(
         raise HTTPException(status_code=500, detail=f"Stream failed: {str(e)}")
 
 
+STATIC_FALLBACKS = {
+    "Sounds good!", "Let's schedule a call.", "Could you provide more details?",
+    "Could you share more details?", "Sounds good to me!", "Thanks for reaching out!",
+    "I will review this and follow up shortly.", "Could you provide additional details?"
+}
+
 @router.get("/{email_id}/quick-replies")
 async def get_quick_replies(
     email_id: str,
@@ -192,7 +216,9 @@ async def get_quick_replies(
 ):
     email = db.query(Email).filter(Email.gmail_message_id == email_id).first()
     if email and email.quick_replies:
-        return {"suggestions": email.quick_replies}
+        cached_set = set(email.quick_replies)
+        if not cached_set.issubset(STATIC_FALLBACKS):
+            return {"suggestions": email.quick_replies}
 
     oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
     if not oauth_acc:
@@ -201,9 +227,14 @@ async def get_quick_replies(
     try:
         thread = GmailService.get_thread(oauth_acc, thread_id)
         conversation_text = extract_thread_text(thread)
-        model_name = (current_user.preferences or {}).get("ollama_model", settings.ollama_model)
+        provider, model_name = get_user_llm_config(current_user)
         
-        suggestions = await AIService.generate_quick_replies(conversation_text, model_name=model_name)
+        suggestions = await AIService.generate_quick_replies(
+            conversation_text, 
+            user_name=current_user.name or "User",
+            model_name=model_name, 
+            provider=provider
+        )
         
         if not email:
             email = Email(user_id=current_user.id, gmail_message_id=email_id, gmail_thread_id=thread_id)
@@ -213,7 +244,74 @@ async def get_quick_replies(
 
         return {"suggestions": suggestions}
     except Exception as e:
-        return {"suggestions": ["Sounds good!", "Let's schedule a call.", "Could you provide more details?"]}
+        return {"suggestions": ["Thanks for reaching out!", "I will review this and follow up shortly.", "Could you provide additional details?"]}
+
+
+@router.get("/{email_id}/analysis")
+async def get_email_analysis(
+    email_id: str,
+    thread_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+
+    try:
+        thread = GmailService.get_thread(oauth_acc, thread_id)
+        conversation_text = extract_thread_text(thread)
+        provider, model_name = get_user_llm_config(current_user)
+
+        analysis = await AIService.analyze_thread(
+            conversation_text,
+            user_name=current_user.name or "User",
+            model_name=model_name,
+            provider=provider
+        )
+        return analysis
+    except Exception:
+        return {
+            "summary": "Sender sent a communication in this thread.",
+            "sentiment": "Action Item",
+            "scenarios": [
+                "Acknowledge and confirm availability",
+                "Request clarification on open items",
+                "Provide formal follow-up"
+            ],
+            "quick_chip": "Review and confirm next steps"
+        }
+
+
+@router.get("/{email_id}/chat-prompts")
+async def get_chat_prompts(
+    email_id: str,
+    thread_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+
+    try:
+        thread = GmailService.get_thread(oauth_acc, thread_id)
+        conversation_text = extract_thread_text(thread)
+        provider, model_name = get_user_llm_config(current_user)
+
+        prompts = await AIService.generate_chat_prompts(
+            conversation_text, 
+            user_name=current_user.name or "User",
+            model_name=model_name, 
+            provider=provider
+        )
+        return {"prompts": prompts}
+    except Exception:
+        return {"prompts": [
+            "Summarize the key action items in this email thread.",
+            "What specific questions or deadlines require my attention?",
+            "Draft a comprehensive response addressing all open items."
+        ]}
 
 
 @router.post("/{email_id}/chat")
@@ -230,7 +328,7 @@ async def chat_with_email(
     try:
         thread = GmailService.get_thread(oauth_acc, request.thread_id)
         conversation_text = extract_thread_text(thread)
-        model_name = (current_user.preferences or {}).get("ollama_model", settings.ollama_model)
+        provider, model_name = get_user_llm_config(current_user)
 
         history = ChatDB.get_session(email_id, current_user.id)
         user_msg = {"role": "user", "content": request.message, "timestamp": time.time()}
@@ -242,7 +340,10 @@ async def chat_with_email(
                 async for token in AIService.chat_stream(
                     email_context=conversation_text,
                     messages=history,
-                    model_name=model_name
+                    user_name=current_user.name or "User",
+                    user_email=current_user.email or "",
+                    model_name=model_name,
+                    provider=provider
                 ):
                     accumulated.append(token)
                     yield f"data: {json.dumps({'token': token})}\n\n"
@@ -286,7 +387,7 @@ async def batch_urgency(
     db: Session = Depends(get_db)
 ):
     results = {}
-    model_name = (current_user.preferences or {}).get("ollama_model", settings.ollama_model)
+    provider, model_name = get_user_llm_config(current_user)
     for item in req.emails[:15]:  # limit batch size
         email_id = item.get("id")
         subject = item.get("subject", "")
@@ -299,7 +400,7 @@ async def batch_urgency(
         if db_email and db_email.urgency:
             results[email_id] = db_email.urgency
         else:
-            urg = await AIService.classify_urgency(subject, snippet, model_name=model_name)
+            urg = await AIService.classify_urgency(subject, snippet, model_name=model_name, provider=provider)
             results[email_id] = urg
             if not db_email:
                 db_email = Email(user_id=current_user.id, gmail_message_id=email_id, urgency=urg)
@@ -309,3 +410,49 @@ async def batch_urgency(
             db.commit()
             
     return {"urgencies": results}
+
+
+class ComposeDraftRequest(BaseModel):
+    prompt: str
+    recipient: Optional[str] = None
+    subject: Optional[str] = None
+    current_body: Optional[str] = None
+    tone: Optional[str] = "professional"
+    model_name: Optional[str] = None
+    provider: Optional[str] = None
+    chat_history: Optional[List[Dict[str, str]]] = None
+    image_names: Optional[List[str]] = None
+
+
+@router.post("/compose-draft")
+async def compose_draft(
+    request: ComposeDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        user_provider, user_model = get_user_llm_config(current_user)
+        provider = request.provider or user_provider
+        model_name = request.model_name or user_model
+
+        result = await AIService.generate_compose_chat(
+            prompt_text=request.prompt,
+            current_subject=request.subject or "",
+            current_body=request.current_body or "",
+            recipient=request.recipient,
+            tone=request.tone,
+            chat_history=request.chat_history,
+            image_names=request.image_names,
+            user_name=current_user.name or "User",
+            user_email=current_user.email or "",
+            model_name=model_name,
+            provider=provider
+        )
+        return {
+            "subject": result.get("subject", request.subject or ""),
+            "draft": result.get("body", ""),
+            "reply": result.get("reply", "Draft updated.")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate draft: {str(e)}")
+

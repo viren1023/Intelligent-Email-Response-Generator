@@ -22,7 +22,14 @@ export interface ChatMessage {
   timestamp?: number;
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export interface EmailAnalysis {
+  summary: string;
+  sentiment: string;
+  scenarios: string[];
+  quick_chip?: string;
+}
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const aiService = {
   generateReply: async (emailId: string, data: GenerateRequest): Promise<GenerateResponse> => {
@@ -86,6 +93,13 @@ export const aiService = {
       params: { thread_id: threadId }
     });
     return response.data.suggestions || [];
+  },
+
+  getChatPrompts: async (emailId: string, threadId: string): Promise<string[]> => {
+    const response = await api.get(`/api/emails/${emailId}/chat-prompts`, {
+      params: { thread_id: threadId }
+    });
+    return response.data.prompts || [];
   },
 
   chatStream: async (
@@ -152,5 +166,29 @@ export const aiService = {
 
   sendReply: async (emailId: string, data: SendReplyRequest): Promise<void> => {
     await api.post(`/api/emails/${emailId}/reply`, data);
+  },
+
+  generateComposeDraft: async (data: {
+    prompt: string;
+    recipient?: string;
+    subject?: string;
+    current_body?: string;
+    tone?: string;
+    model_name?: string;
+    provider?: string;
+    chat_history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    image_names?: string[];
+  }): Promise<{ subject: string; draft: string; reply: string }> => {
+    const res = await api.post('/api/emails/compose-draft', data);
+    return {
+      subject: res.data.subject || '',
+      draft: res.data.draft || '',
+      reply: res.data.reply || '',
+    };
+  },
+
+  getAnalysis: async (emailId: string, threadId: string): Promise<EmailAnalysis> => {
+    const res = await api.get(`/api/emails/${emailId}/analysis`, { params: { thread_id: threadId } });
+    return res.data;
   }
 };

@@ -19,6 +19,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.app_secret_key)
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(emails.router, prefix="/api/emails", tags=["emails"])
 app.include_router(ai.router, prefix="/api/emails", tags=["ai"])
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(responses.router, prefix="/api/responses", tags=["responses"])
 app.include_router(settings_route.router, prefix="/api/settings", tags=["settings"])
 

@@ -16,16 +16,34 @@ TAB_QUERIES = {
     "primary": "in:inbox -category:promotions -category:social -category:updates",
     "unread":   "is:unread",
     "sent":     "in:sent",
+    "drafts":   "in:draft",
     "all":      "in:anywhere -in:spam -in:trash",
 }
 
 class SendReplyRequest(BaseModel):
-    response_id: int
+    response_id: Optional[int] = None
     edited_text: str
+    thread_id: Optional[str] = None
+
+
+@router.get("/unread-count")
+def get_unread_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        return {"count": 0}
+    try:
+        count = GmailService.get_unread_count(oauth_acc)
+        return {"count": count}
+    except Exception:
+        return {"count": 0}
+
 
 
 @router.get("/unread")
-async def get_unread_emails(
+def get_unread_emails(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -40,8 +58,8 @@ async def get_unread_emails(
         raise HTTPException(status_code=500, detail=f"Failed to fetch emails: {str(e)}")
 
 @router.get("/all")
-async def get_all_emails(
-    tab: str = Query(default="primary", pattern="^(primary|unread|sent|all)$"),
+def get_all_emails(
+    tab: str = Query(default="primary", pattern="^(primary|unread|sent|all|drafts)$"),
     page_token: Optional[str] = Query(default=None),
     max_results: int = Query(default=20, ge=1, le=50),
     current_user: User = Depends(get_current_user),
@@ -61,6 +79,7 @@ async def get_all_emails(
         emails, next_page_token = GmailService.list_emails(
             oauth_acc, query=query, page_token=page_token, max_results=max_results
         )
+        db.commit()  # persist any refreshed token
 
         # Annotate with AI-replied badge from local DB
         sent_gmail_ids = {
@@ -81,9 +100,9 @@ async def get_all_emails(
 
 
 @router.get("/{email_id}/thread")
-async def get_email_thread(
+def get_email_thread(
     email_id: str,
-    thread_id: str,
+    thread_id: Optional[str] = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -91,24 +110,53 @@ async def get_email_thread(
     if not oauth_acc:
         raise HTTPException(status_code=400, detail="Google account not connected")
         
+    target_thread_id = thread_id or email_id
     try:
-        thread = GmailService.get_thread(oauth_acc, thread_id)
+        thread = GmailService.get_thread(oauth_acc, target_thread_id)
         
         # Parse thread messages
         messages = []
         for msg in thread.get('messages', []):
             headers = {h['name'].lower(): h['value'] for h in msg['payload']['headers']}
             
-            # Simple body extraction
-            body = ""
-            if 'parts' in msg['payload']:
-                for part in msg['payload']['parts']:
-                    if part['mimeType'] == 'text/plain' and 'data' in part['body']:
-                        import base64
-                        body += base64.urlsafe_b64decode(part['body']['data']).decode()
-            elif 'body' in msg['payload'] and 'data' in msg['payload']['body']:
+            # Recursive robust body extraction (handles text/plain, nested multipart, and fallback to text/html)
+            def extract_body(payload_node: dict) -> str:
                 import base64
-                body = base64.urlsafe_b64decode(msg['payload']['body']['data']).decode()
+                text_plain = ""
+                text_html = ""
+
+                def walk(parts):
+                    nonlocal text_plain, text_html
+                    for p in parts:
+                        mime = p.get('mimeType', '')
+                        data = p.get('body', {}).get('data')
+                        if mime == 'text/plain' and data and not text_plain:
+                            try:
+                                text_plain = base64.urlsafe_b64decode(data).decode('utf-8', errors='replace')
+                            except Exception:
+                                pass
+                        elif mime == 'text/html' and data and not text_html:
+                            try:
+                                text_html = base64.urlsafe_b64decode(data).decode('utf-8', errors='replace')
+                            except Exception:
+                                pass
+                        if 'parts' in p:
+                            walk(p['parts'])
+
+                if 'parts' in payload_node:
+                    walk(payload_node['parts'])
+                elif 'body' in payload_node and payload_node['body'].get('data'):
+                    try:
+                        decoded = base64.urlsafe_b64decode(payload_node['body']['data']).decode('utf-8', errors='replace')
+                        if payload_node.get('mimeType') == 'text/html':
+                            text_html = decoded
+                        else:
+                            text_plain = decoded
+                    except Exception:
+                        pass
+                return text_plain or text_html
+
+            body = extract_body(msg['payload'])
                 
             messages.append({
                 'id': msg['id'],
@@ -124,7 +172,7 @@ async def get_email_thread(
         raise HTTPException(status_code=500, detail=f"Failed to fetch thread: {str(e)}")
 
 @router.post("/{email_id}/reply")
-async def send_reply(
+def send_reply(
     email_id: str,
     request: SendReplyRequest,
     current_user: User = Depends(get_current_user),
@@ -134,16 +182,31 @@ async def send_reply(
     if not oauth_acc:
         raise HTTPException(status_code=400, detail="Google account not connected")
         
-    ai_response = db.query(AIResponse).filter(AIResponse.id == request.response_id, AIResponse.user_id == current_user.id).first()
-    if not ai_response:
-        raise HTTPException(status_code=404, detail="Response not found")
-        
-    email = db.query(Email).filter(Email.id == ai_response.email_id, Email.user_id == current_user.id).first()
+    email = db.query(Email).filter(Email.gmail_message_id == email_id, Email.user_id == current_user.id).first()
     if not email:
-        raise HTTPException(status_code=404, detail="Email not found")
+        email = Email(user_id=current_user.id, gmail_message_id=email_id, gmail_thread_id=request.thread_id or email_id)
+        db.add(email)
+        db.commit()
+        db.refresh(email)
+
+    ai_response = None
+    if request.response_id:
+        ai_response = db.query(AIResponse).filter(AIResponse.id == request.response_id, AIResponse.user_id == current_user.id).first()
+    
+    if not ai_response:
+        ai_response = AIResponse(
+            user_id=current_user.id,
+            email_id=email.id,
+            generated_text=request.edited_text,
+            status="GENERATED"
+        )
+        db.add(ai_response)
+        db.commit()
+        db.refresh(ai_response)
         
     try:
-        thread = GmailService.get_thread(oauth_acc, email.gmail_thread_id)
+        thread_id = email.gmail_thread_id or request.thread_id or email_id
+        thread = GmailService.get_thread(oauth_acc, thread_id)
         latest_msg_id = thread['messages'][-1]['id']
         
         service = get_gmail_service(oauth_acc)
@@ -163,11 +226,12 @@ async def send_reply(
             to=to,
             subject=subject,
             message_text=request.edited_text,
-            thread_id=email.gmail_thread_id,
+            thread_id=thread_id,
             message_id=message_id_header
         )
         
         GmailService.mark_as_read(oauth_acc, email.gmail_message_id)
+        GmailService.clear_cache(current_user.id)
         
         email.is_read = True
         ai_response.edited_text = request.edited_text
@@ -178,3 +242,117 @@ async def send_reply(
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send reply: {str(e)}")
+
+
+class ComposeEmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+
+
+@router.post("/compose")
+def compose_email(
+    request: ComposeEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+
+    if not request.to.strip() or not request.subject.strip() or not request.body.strip():
+        raise HTTPException(status_code=400, detail="Recipient, subject, and body are required")
+
+    try:
+        sent_msg = GmailService.send_new_email(
+            oauth_acc,
+            to=request.to.strip(),
+            subject=request.subject.strip(),
+            message_text=request.body.strip()
+        )
+        GmailService.clear_cache(current_user.id)
+        return {"status": "success", "id": sent_msg.get("id")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+class SaveDraftRequest(BaseModel):
+    to: Optional[str] = ""
+    subject: Optional[str] = ""
+    body: str
+
+
+@router.post("/draft")
+def save_google_draft(
+    request: SaveDraftRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+
+    if not request.body.strip() and not (request.subject and request.subject.strip()):
+        raise HTTPException(status_code=400, detail="Cannot save an empty draft")
+
+    try:
+        draft_obj = GmailService.create_draft(
+            oauth_acc,
+            to=request.to.strip() if request.to else "",
+            subject=request.subject.strip() if request.subject else "Untitled Draft",
+            message_text=request.body.strip() if request.body else ""
+        )
+        GmailService.clear_cache(current_user.id)
+        return {"status": "success", "id": draft_obj.get("id")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save draft to Google: {str(e)}")
+
+
+@router.post("/{email_id}/mark-read")
+def mark_email_read(
+    email_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+    try:
+        GmailService.mark_as_read(oauth_acc, email_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to mark as read: {str(e)}")
+
+
+@router.post("/{email_id}/mark-unread")
+def mark_email_unread(
+    email_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+    try:
+        GmailService.mark_as_unread(oauth_acc, email_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to mark as unread: {str(e)}")
+
+
+@router.delete("/{email_id}")
+def delete_email(
+    email_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    oauth_acc = db.query(OAuthAccount).filter(OAuthAccount.user_id == current_user.id, OAuthAccount.provider == "google").first()
+    if not oauth_acc:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+    try:
+        GmailService.trash_message(oauth_acc, email_id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete email: {str(e)}")
+
+

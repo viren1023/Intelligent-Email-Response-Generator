@@ -1,6 +1,6 @@
 import api from './api';
 
-export type InboxTab = 'primary' | 'unread' | 'sent' | 'all';
+export type InboxTab = 'primary' | 'unread' | 'sent' | 'all' | 'drafts';
 
 export interface EmailMetadata {
   id: string;
@@ -46,8 +46,29 @@ export const emailService = {
     const response = await api.get('/api/emails/all', { params });
     return response.data;
   },
+  getUnreadCount: async (): Promise<number> => {
+    const response = await api.get('/api/emails/unread-count');
+    return response.data.count || 0;
+  },
   getThread: async (emailId: string, threadId: string): Promise<ThreadResponse> => {
     const response = await api.get(`/api/emails/${emailId}/thread?thread_id=${threadId}`);
     return response.data;
+  },
+  composeEmail: async (data: { to: string; subject: string; body: string }): Promise<{ status: string; id?: string }> => {
+    const response = await api.post('/api/emails/compose', data);
+    return response.data;
+  },
+  saveGoogleDraft: async (data: { to?: string; subject?: string; body: string }): Promise<{ status: string; id?: string }> => {
+    const response = await api.post('/api/emails/draft', data);
+    return response.data;
+  },
+  markRead: async (emailId: string): Promise<void> => {
+    await api.post(`/api/emails/${emailId}/mark-read`);
+  },
+  markUnread: async (emailId: string): Promise<void> => {
+    await api.post(`/api/emails/${emailId}/mark-unread`);
+  },
+  deleteEmail: async (emailId: string): Promise<void> => {
+    await api.delete(`/api/emails/${emailId}`);
   }
 };

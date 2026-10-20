@@ -2,8 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 font-sans antialiased;
+    background-color: #ffffff;
+    color: #0f172a;
+    font-family: "Plus Jakarta Sans", Inter, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  .dark body {
+    background-color: #0f1117;
+    color: #f8fafc;
+  }
+}
+
+/* Custom sleek scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 dark:bg-slate-700 rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors;
+}
+
+@layer utilities {
+  .btn-charcoal {
+    @apply bg-charcoal hover:bg-[#3B3F4E] text-white font-semibold transition-all duration-150 ease-out active:scale-[0.98] shadow-sm;
+  }
+  .btn-outline-pill {
+    @apply bg-white dark:bg-surface-darkCard hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/90 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-xl transition-all duration-150 ease-out active:scale-[0.98];
   }
 }

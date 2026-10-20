@@ -14,6 +14,7 @@ router = APIRouter()
 class AutoSaveDraftRequest(BaseModel):
     edited_text: str
 
+@router.get("")
 @router.get("/")
 async def get_responses(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     responses = db.query(AIResponse).filter(AIResponse.user_id == current_user.id).order_by(desc(AIResponse.created_at)).all()
@@ -21,11 +22,15 @@ async def get_responses(current_user: User = Depends(get_current_user), db: Sess
     result = []
     for r in responses:
         email = db.query(Email).filter(Email.id == r.email_id).first()
+        sender_name = (email.sender_email or email.sender_name or "AI Response") if (email and (email.sender_email or email.sender_name)) else "AI Response"
+        subject_name = (email.subject or "(No Subject)") if email else "(No Subject)"
+        snippet = (r.edited_text or r.generated_text or "")[:140]
         result.append({
             "id": r.id,
-            "sender": (email.sender_email or email.sender_name) if email else "Unknown",
-            "subject": email.subject if email else "No Subject",
-            "status": r.status,
+            "sender": sender_name,
+            "subject": subject_name,
+            "snippet": snippet,
+            "status": r.status or "GENERATED",
             "generated_at": r.created_at,
             "sent_at": r.sent_at
         })

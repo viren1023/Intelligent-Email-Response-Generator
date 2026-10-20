@@ -51,3 +51,11 @@ token.json
 .DS_Store
 *.swp
 *.swo
+
+.agent/*
+.codegraph/
+*.db
+backend/data/*.db
+
+# Planning Docs
+*.md

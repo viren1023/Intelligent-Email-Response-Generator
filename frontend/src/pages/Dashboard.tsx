@@ -1,531 +1,505 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authService, type User } from '../services/auth';
 import { emailService, type EmailMetadata, type InboxTab } from '../services/email';
-import { aiService } from '../services/ai';
-import { ShortcutsModal } from '../components/ShortcutsModal';
-import { useTheme } from '../context/ThemeContext';
+import { Sidebar } from '../components/Sidebar';
+import { Header } from '../components/Header';
+import { ComposeModal } from '../components/ComposeModal';
+import { getInitials, getAvatarColorClass } from '../utils/avatar';
+import {
+  getCachedUser,
+  setCachedUser,
+  getCachedUnreadCount,
+  setCachedUnreadCount,
+  getCachedEmails,
+  setCachedEmails,
+} from '../utils/cache';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  MailOpen,
+  Trash2,
+  Sparkles,
+  RefreshCw,
+} from 'lucide-react';
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-function senderName(from: string) {
-  return from.split('<')[0].replace(/"/g, '').trim() || from;
-}
-function senderInitial(from: string) {
-  return (senderName(from) || '?').charAt(0).toUpperCase();
-}
-function formatDate(dateStr: string) {
+function formatEmailDate(dateStr: string): string {
+  if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   const now = new Date();
-  if (d.toDateString() === now.toDateString())
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (d.getFullYear() === now.getFullYear())
+  const isToday =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+
+  if (isYesterday) {
+    return 'Yesterday';
+  }
+
+  if (d.getFullYear() === now.getFullYear()) {
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
   return d.toLocaleDateString([], { year: '2-digit', month: 'short', day: 'numeric' });
 }
 
-const TAB_LABELS: Record<InboxTab, string> = {
-  primary: 'Primary',
-  unread: 'Unread',
-  sent: 'Sent',
-  all: 'All Mail',
-};
-const TAB_EMPTY: Record<InboxTab, string> = {
-  primary: 'Your primary inbox is empty.',
-  unread: 'No unread emails — Inbox Zero! 🎉',
-  sent: 'No sent emails yet.',
-  all: 'No emails found.',
-};
-
-// ─── Skeleton row ────────────────────────────────────────────────────────────
-const SkeletonRow: React.FC = () => (
-  <div className="flex items-start gap-4 px-5 py-4 animate-pulse dark:bg-gray-800">
-    <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-200 dark:bg-gray-700" />
-    <div className="flex-1 min-w-0 space-y-2 pt-0.5">
-      <div className="flex justify-between">
-        <div className="h-3.5 bg-gray-200 dark:bg-gray-700 rounded w-1/4" />
-        <div className="h-3 bg-gray-100 dark:bg-gray-700/60 rounded w-14" />
-      </div>
-      <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-2/5" />
-      <div className="h-3 bg-gray-100 dark:bg-gray-700/60 rounded w-3/4" />
-    </div>
-  </div>
-);
-const EmailSkeleton: React.FC = () => (
-  <div className="divide-y divide-gray-100 dark:divide-gray-700">
-    {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
-  </div>
-);
-
-// ─── Email card ───────────────────────────────────────────────────────────────
-interface EmailCardProps {
-  email: EmailMetadata;
-  urgency?: string;
-  onClick: () => void;
-}
-
-const EmailCard: React.FC<EmailCardProps> = ({ email, urgency, onClick }) => {
-  const urgencyBadge = () => {
-    if (urgency === 'URGENT') {
-      return <span className="text-[10px] bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 font-semibold px-2 py-0.5 rounded-full">🔴 Urgent</span>;
-    }
-    if (urgency === 'IMPORTANT') {
-      return <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold px-2 py-0.5 rounded-full">🟡 Important</span>;
-    }
-    return null;
-  };
-
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-start gap-4 px-5 py-4 cursor-pointer transition-colors group hover:bg-blue-50/60 dark:hover:bg-gray-700/60
-        ${email.is_unread ? 'bg-white dark:bg-gray-800' : 'bg-gray-50/40 dark:bg-gray-800/40'}`}
-    >
-      <div className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shadow-inner
-        ${email.is_unread ? 'bg-gradient-to-br from-blue-100 to-indigo-200 dark:from-indigo-900 dark:to-indigo-700 text-indigo-700 dark:text-indigo-200' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
-        {senderInitial(email.from)}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-3 mb-0.5">
-          <div className="flex items-center gap-2 truncate">
-            <span className={`truncate text-sm ${email.is_unread ? 'font-semibold text-gray-900 dark:text-white' : 'font-normal text-gray-600 dark:text-gray-300'}`}>
-              {senderName(email.from)}
-            </span>
-            {urgencyBadge()}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {email.ai_replied && (
-              <span className="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-full font-medium">AI ✓</span>
-            )}
-            <span className={`text-xs ${email.is_unread ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-400 dark:text-gray-500'}`}>
-              {formatDate(email.date)}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {email.is_unread && <span className="flex-shrink-0 w-2 h-2 rounded-full bg-blue-500 mt-0.5" />}
-          <span className={`text-sm truncate ${email.is_unread ? 'font-medium text-gray-800 dark:text-gray-200' : 'text-gray-500 dark:text-gray-400'}`}>
-            {email.subject || '(No Subject)'}
-          </span>
-          <span className="text-sm text-gray-400 dark:text-gray-500 truncate hidden sm:block">— {email.snippet}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ─── Sidebar ─────────────────────────────────────────────────────────────────
-interface SidebarProps {
-  user: User;
-  activeTab: InboxTab;
-  unreadCount: number;
-  onTabChange: (t: InboxTab) => void;
-  onLogout: () => void;
-  onOpenShortcuts: () => void;
-}
-
-const Sidebar: React.FC<SidebarProps> = ({ user, activeTab, unreadCount, onTabChange, onLogout, onOpenShortcuts }) => {
-  const { theme, toggleTheme } = useTheme();
-  const tabs: InboxTab[] = ['primary', 'unread', 'sent', 'all'];
-  const tabIcon = (t: InboxTab) => {
-    if (t === 'primary') return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />;
-    if (t === 'unread') return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />;
-    if (t === 'sent') return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />;
-    return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />;
-  };
-
-  return (
-    <aside className="w-60 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0 sticky top-0 h-screen overflow-y-auto">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-sm">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <h2 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">Email AI</h2>
-        </div>
-        <button
-          onClick={toggleTheme}
-          title="Toggle Dark Mode"
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-        >
-          {theme === 'dark' ? '☀️' : '🌙'}
-        </button>
-      </div>
-
-      <nav className="flex-1 p-3 space-y-0.5">
-        {tabs.map(t => (
-          <button
-            key={t}
-            onClick={() => onTabChange(t)}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors
-              ${activeTab === t
-                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            <span className="flex items-center gap-3">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">{tabIcon(t)}</svg>
-              {TAB_LABELS[t]}
-            </span>
-            {t === 'unread' && unreadCount > 0 && (
-              <span className="text-xs bg-blue-600 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center leading-4">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-          </button>
-        ))}
-
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-700 mt-2 space-y-0.5">
-          <Link
-            to="/history"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            History
-          </Link>
-          <Link
-            to="/settings"
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            </svg>
-            Settings
-          </Link>
-          <button
-            onClick={onOpenShortcuts}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <span className="text-sm">⌨️</span>
-            Shortcuts (<kbd className="text-xs font-mono">?</kbd>)
-          </button>
-        </div>
-      </nav>
-
-      <div className="p-3 border-t border-gray-200 dark:border-gray-700 flex items-center gap-2">
-        {user.picture
-          ? <img src={user.picture} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-full ring-2 ring-gray-100 dark:ring-gray-700 flex-shrink-0" />
-          : <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">{user.name.charAt(0)}</div>
-        }
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{user.name}</p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{user.email}</p>
-        </div>
-        <button onClick={onLogout} title="Logout"
-          className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-        </button>
-      </div>
-    </aside>
-  );
-};
-
-// ─── Main Dashboard ──────────────────────────────────────────────────────────
-const Dashboard: React.FC = () => {
+export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
-  const [emails, setEmails] = useState<EmailMetadata[]>([]);
-  const [urgencyMap, setUrgencyMap] = useState<Record<string, string>>({});
-  const [urgencyFilter, setUrgencyFilter] = useState<'ALL' | 'URGENT' | 'IMPORTANT'>('ALL');
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [bootLoading, setBootLoading] = useState(true);
+  const initialTab = (searchParams.get('tab') as InboxTab) || 'primary';
+  const initialSearch = searchParams.get('search') || '';
+  const [tab, setTab] = useState<InboxTab>(initialTab);
+
+  // Instant hydration from cache
+  const [user, setUser] = useState<User | null>(getCachedUser);
+  const [unreadCount, setUnreadCount] = useState<number>(getCachedUnreadCount);
+  const [emails, setEmails] = useState<EmailMetadata[]>(() => getCachedEmails(initialTab));
+  const [filteredEmails, setFilteredEmails] = useState<EmailMetadata[]>(() => getCachedEmails(initialTab));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<InboxTab>('primary');
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const [nextToken, setNextToken] = useState<string | null>(null);
-  const [tokenStack, setTokenStack] = useState<string[]>([]);
-  const pageNum = tokenStack.length + 1;
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageTokens, setPageTokens] = useState<(string | undefined)[]>([undefined]);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
 
-  const [search, setSearch] = useState('');
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
+  // Category & Search filters
+  const [categoryFilter, setCategoryFilter] = useState<'All' | 'Important' | 'Urgent' | 'Other'>('All');
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
 
-  const fetchUrgency = useCallback((fetchedEmails: EmailMetadata[]) => {
-    if (!fetchedEmails.length) return;
-    const batch = fetchedEmails.map(e => ({ id: e.id, subject: e.subject, snippet: e.snippet }));
-    aiService.batchUrgency(batch)
-      .then(urgencies => {
-        setUrgencyMap(prev => ({ ...prev, ...urgencies }));
-      })
-      .catch(() => {});
-  }, []);
+  // Modals
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const emailListRef = useRef<HTMLDivElement>(null);
 
-  const loadPage = useCallback(async (activeTab: InboxTab, pageToken?: string) => {
-    setLoading(true);
+  // Fetch data with cache persistence
+  const loadEmails = useCallback(async (activeTab: InboxTab, page: number = 1, token?: string) => {
+    // Show loader if navigating beyond page 1 or if no cached data
+    if (page > 1 || !getCachedEmails(activeTab)?.length) {
+      setLoading(true);
+    }
     try {
-      const data = await emailService.getAll(activeTab, pageToken);
-      setEmails(data.emails);
-      setNextToken(data.next_page_token);
-      fetchUrgency(data.emails);
+      const data = await emailService.getAll(activeTab, token);
+      if (data && Array.isArray(data.emails)) {
+        setEmails(data.emails);
+        if (page === 1) {
+          setCachedEmails(activeTab, data.emails);
+        }
+        setNextPageToken(data.next_page_token || null);
+        if (data.next_page_token) {
+          setPageTokens((prev) => {
+            const copy = [...prev];
+            copy[page] = data.next_page_token || undefined;
+            return copy;
+          });
+        }
+      } else {
+        setEmails([]);
+        setNextPageToken(null);
+      }
     } catch (err: any) {
-      if (err?.response?.status === 401) navigate('/login');
+      if (err?.response?.status === 401) {
+        navigate('/login');
+        return;
+      }
+      setEmails([]);
     } finally {
       setLoading(false);
+      emailListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [navigate, fetchUrgency]);
+  }, [navigate]);
+
+  const handleNextPage = () => {
+    if (!nextPageToken || loading) return;
+    const nextPage = currentPage + 1;
+    const token = pageTokens[currentPage];
+    setCurrentPage(nextPage);
+    setLoading(true);
+    loadEmails(tab, nextPage, token);
+  };
+
+  const handlePrevPage = () => {
+    if (currentPage <= 1 || loading) return;
+    const prevPage = currentPage - 1;
+    const token = pageTokens[prevPage - 1];
+    setCurrentPage(prevPage);
+    setLoading(true);
+    loadEmails(tab, prevPage, token);
+  };
 
   useEffect(() => {
-    Promise.all([
-      authService.getMe(),
-      emailService.getAll('primary'),
-    ])
-      .then(([u, page]) => {
+    authService.getMe()
+      .then((u) => {
         setUser(u);
-        setEmails(page.emails);
-        setNextToken(page.next_page_token);
-        fetchUrgency(page.emails);
-        emailService.getAll('unread').then(d => setUnreadCount(d.emails.length)).catch(() => {});
+        setCachedUser(u);
+        loadEmails(tab, 1, undefined);
+        emailService.getUnreadCount()
+          .then((c) => {
+            const val = c || 0;
+            setUnreadCount(val);
+            setCachedUnreadCount(val);
+          })
+          .catch(() => setUnreadCount(0));
       })
-      .catch(err => {
-        const status = err?.response?.status;
-        if (status === 401) {
-          navigate('/login');
-        } else {
-          const msg = err?.response?.data?.detail ?? err?.message ?? 'Could not connect to server';
-          setError(msg);
-        }
-      })
-      .finally(() => setBootLoading(false));
-  }, [navigate, fetchUrgency]);
+      .catch(() => {
+        navigate('/login');
+      });
+  }, [loadEmails, tab, navigate]);
+
+  // Filter emails based on category tab and search query
+  useEffect(() => {
+    let list = [...emails];
+
+    if (categoryFilter === 'Important') {
+      list = list.filter(
+        (e) =>
+          e.is_unread ||
+          e.subject.toLowerCase().includes('important') ||
+          e.snippet.toLowerCase().includes('important')
+      );
+    } else if (categoryFilter === 'Urgent') {
+      list = list.filter(
+        (e) =>
+          e.subject.toLowerCase().includes('urgent') ||
+          e.snippet.toLowerCase().includes('urgent') ||
+          e.snippet.toLowerCase().includes('asap')
+      );
+    } else if (categoryFilter === 'Other') {
+      list = list.filter(
+        (e) =>
+          !e.subject.toLowerCase().includes('urgent') &&
+          !e.is_unread
+      );
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      list = list.filter(
+        (e) =>
+          e.subject.toLowerCase().includes(query) ||
+          e.from.toLowerCase().includes(query) ||
+          e.snippet.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredEmails(list);
+  }, [emails, categoryFilter, searchQuery]);
 
   const handleTabChange = (t: InboxTab) => {
     setTab(t);
-    setTokenStack([]);
-    setNextToken(null);
-    setSearch('');
-    setUrgencyFilter('ALL');
-    loadPage(t);
+    setSearchParams({ tab: t });
+    setCurrentPage(1);
+    setPageTokens([undefined]);
+    setNextPageToken(null);
+    const cached = getCachedEmails(t);
+    if (cached && cached.length > 0) {
+      setEmails(cached);
+    }
+    loadEmails(t, 1, undefined);
   };
 
-  const handleNext = () => {
-    if (!nextToken) return;
-    setTokenStack(s => [...s, nextToken]);
-    loadPage(tab, nextToken);
-    setSearch('');
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        loadEmails(tab, currentPage, undefined),
+        emailService.getUnreadCount().then((c) => {
+          const val = c || 0;
+          setUnreadCount(val);
+          setCachedUnreadCount(val);
+        }),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
-  const handlePrev = () => {
-    if (tokenStack.length === 0) return;
-    const newStack = [...tokenStack];
-    newStack.pop();
-    setTokenStack(newStack);
-    loadPage(tab, newStack[newStack.length - 1]);
-    setSearch('');
-  };
-  const handleRefresh = () => {
-    setTokenStack([]);
-    setSearch('');
-    loadPage(tab);
-    emailService.getAll('unread').then(d => setUnreadCount(d.emails.length)).catch(() => {});
-  };
-  const handleLogout = () => authService.logout().then(() => navigate('/login'));
 
-  // Filter pipeline: Search + Urgency filter
-  const filtered = emails.filter(e => {
-    const matchesSearch = !search.trim() || (
-      senderName(e.from).toLowerCase().includes(search.toLowerCase())
-      || e.subject.toLowerCase().includes(search.toLowerCase())
-      || e.snippet.toLowerCase().includes(search.toLowerCase())
+  const handleOpenEmail = (email: EmailMetadata) => {
+    navigate(`/email/${email.id}`, { state: { threadId: email.threadId } });
+  };
+
+  const handleToggleRead = async (email: EmailMetadata, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newStatus = !email.is_unread;
+    const updated = emails.map((item) =>
+      item.id === email.id ? { ...item, is_unread: newStatus } : item
     );
+    setEmails(updated);
+    setCachedEmails(tab, updated);
 
-    const emailUrgency = urgencyMap[e.id] || 'NORMAL';
-    const matchesUrgency =
-      urgencyFilter === 'ALL'
-      || (urgencyFilter === 'URGENT' && emailUrgency === 'URGENT')
-      || (urgencyFilter === 'IMPORTANT' && (emailUrgency === 'IMPORTANT' || emailUrgency === 'URGENT'));
+    const delta = newStatus ? 1 : -1;
+    const newCount = Math.max(0, unreadCount + delta);
+    setUnreadCount(newCount);
+    setCachedUnreadCount(newCount);
 
-    return matchesSearch && matchesUrgency;
-  });
-
-  // Global Keyboard shortcuts
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const isEditing = ['INPUT', 'TEXTAREA'].includes((document.activeElement as HTMLElement)?.tagName || '');
-      if (e.key === '?' && !isEditing) {
-        e.preventDefault();
-        setIsShortcutsOpen(prev => !prev);
-      } else if (e.key === 'Escape') {
-        setIsShortcutsOpen(false);
+    try {
+      if (newStatus) {
+        await emailService.markUnread(email.id);
+      } else {
+        await emailService.markRead(email.id);
       }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    } catch {}
+  };
 
-  if (bootLoading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-    </div>
-  );
+  const handleDeleteEmail = async (email: EmailMetadata, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = emails.filter((item) => item.id !== email.id);
+    setEmails(updated);
+    setCachedEmails(tab, updated);
 
-  if (error || !user) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-red-200 dark:border-red-900 shadow-sm p-8 max-w-md text-center">
-        <div className="w-12 h-12 bg-red-50 dark:bg-red-950/50 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Something went wrong</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{error ?? 'Unable to load your account.'}</p>
-        <button onClick={() => navigate('/login')}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-          Back to Login
-        </button>
-      </div>
-    </div>
-  );
+    if (email.is_unread) {
+      const newCount = Math.max(0, unreadCount - 1);
+      setUnreadCount(newCount);
+      setCachedUnreadCount(newCount);
+    }
+
+    try {
+      await emailService.deleteEmail(email.id);
+    } catch {}
+  };
+
+  const handleLogout = async () => {
+    try {
+      await authService.logout();
+    } catch {}
+    navigate('/login');
+  };
 
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-50 dark:bg-gray-900 transition-colors">
-      <Sidebar
+    <div className="w-full h-screen flex flex-col bg-white dark:bg-surface-darkCard overflow-hidden">
+      {/* Universal Top Header */}
+      <Header
         user={user}
-        activeTab={tab}
-        unreadCount={unreadCount}
-        onTabChange={handleTabChange}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        showSearch={true}
         onLogout={handleLogout}
-        onOpenShortcuts={() => setIsShortcutsOpen(true)}
       />
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top bar */}
-        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3 flex items-center gap-3 flex-shrink-0">
-          <div className="flex-1 max-w-xl relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              ref={searchRef}
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search in current page..."
-              className="w-full pl-9 pr-8 py-2 text-sm bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-700 transition-colors"
-            />
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+      {/* Main Body Layout */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Left Auto-collapsible Sidebar */}
+        <Sidebar
+          user={user}
+          activeTab={tab}
+          activePage="dashboard"
+          unreadCount={unreadCount}
+          onTabChange={handleTabChange}
+          onOpenCompose={() => setIsComposeOpen(true)}
+          onLogout={handleLogout}
+        />
+
+        {/* Central Email Column */}
+        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-surface-darkCard overflow-hidden">
+          {/* Filter Tabs Bar with Distinct Color Shade */}
+          <div className="px-6 py-2.5 border-b border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between flex-shrink-0 bg-slate-50/60 dark:bg-[#12131D]">
+            <div className="flex items-center gap-1.5">
+              {(['All', 'Important', 'Urgent', 'Other'] as const).map((cat) => {
+                const isActive = categoryFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                      isActive
+                        ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold shadow-xs border border-slate-200/80 dark:border-slate-700/80'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/40'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing || loading}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-800 transition-all active:scale-95 flex items-center gap-1.5 text-xs font-semibold"
+                title="Refresh email list"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-purple' : ''}`} />
+                <span className="hidden sm:inline">Refresh</span>
               </button>
+
+              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                {filteredEmails.length} {filteredEmails.length === 1 ? 'message' : 'messages'}
+              </span>
+            </div>
+          </div>
+
+          {/* Email List Rows */}
+          <div ref={emailListRef} className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50">
+            {loading ? (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="px-6 py-4 flex items-start gap-4 animate-pulse">
+                    <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-800 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded w-32" />
+                        <div className="h-3 bg-slate-100 dark:bg-slate-800/70 rounded w-14" />
+                      </div>
+                      <div className="h-3.5 bg-slate-200 dark:bg-slate-800 rounded w-2/3" />
+                      <div className="h-3 bg-slate-100 dark:bg-slate-800/60 rounded w-4/5" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredEmails.length === 0 ? (
+              <div className="p-16 text-center text-xs text-slate-400">
+                {searchQuery.trim() ? 'No emails match your search.' : 'No emails found in this mailbox.'}
+              </div>
+            ) : (
+              filteredEmails.map((email) => {
+                const sender = email.from.split('<')[0].replace(/"/g, '').trim() || email.from;
+                const initials = getInitials(sender);
+                const avatarColor = getAvatarColorClass(sender);
+
+                return (
+                  <div
+                    key={email.id}
+                    onClick={() => handleOpenEmail(email)}
+                    className={`px-6 py-3.5 cursor-pointer transition-colors flex items-start gap-3.5 group relative ${
+                      email.is_unread
+                        ? 'bg-white dark:bg-surface-darkCard border-l-[3px] border-l-brand-purple hover:bg-purple-50/20 dark:hover:bg-[#1E1F2E]'
+                        : 'bg-slate-50/30 dark:bg-[#13141E] border-l-[3px] border-l-transparent hover:bg-slate-100/60 dark:hover:bg-[#1A1B28]'
+                    }`}
+                  >
+                    {/* Monogram Avatar */}
+                    <div className={`w-9 h-9 rounded-full border flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5 shadow-xs ${avatarColor}`}>
+                      {initials}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      {/* Top Line: Sender, AI badge, Time, Actions */}
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`text-sm truncate ${
+                              email.is_unread
+                                ? 'font-bold text-slate-900 dark:text-white'
+                                : 'font-semibold text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {sender}
+                          </span>
+
+                          {email.ai_replied && (
+                            <span className="text-[10px] font-semibold text-brand-purple bg-purple-50 dark:bg-purple-950/60 border border-purple-200/60 dark:border-purple-800/60 px-2 py-0.5 rounded-md inline-flex items-center gap-1 flex-shrink-0">
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>AI Replied</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Timestamp & Hover Action Buttons */}
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* Hover action toolbar */}
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                            <button
+                              onClick={(e) => handleToggleRead(email, e)}
+                              title={email.is_unread ? 'Mark as read' : 'Mark as unread'}
+                              className="p-1 rounded-lg text-slate-400 hover:text-brand-purple hover:bg-purple-50 dark:hover:bg-purple-950/50 transition-colors"
+                            >
+                              {email.is_unread ? <MailOpen className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteEmail(email, e)}
+                              title="Delete email"
+                              className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Stylish Timestamp Badge */}
+                          <span className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-[#1E1F2E] text-slate-500 dark:text-slate-400 group-hover:bg-slate-200/60 dark:group-hover:bg-[#252636] transition-colors whitespace-nowrap">
+                            {formatEmailDate(email.date)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Subject Line */}
+                      <div
+                        className={`text-xs sm:text-sm mb-0.5 leading-snug truncate ${
+                          email.is_unread
+                            ? 'font-semibold text-slate-900 dark:text-slate-100'
+                            : 'font-medium text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {email.subject}
+                      </div>
+
+                      {/* Snippet Preview */}
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed">
+                        {email.snippet}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
 
-          {/* Urgency Filter Pills */}
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg border border-gray-200 dark:border-gray-600 text-xs">
-            <button
-              onClick={() => setUrgencyFilter('ALL')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                urgencyFilter === 'ALL'
-                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-xs'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900'
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setUrgencyFilter('URGENT')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                urgencyFilter === 'URGENT'
-                  ? 'bg-red-500 text-white shadow-xs'
-                  : 'text-red-600 dark:text-red-400 hover:text-red-700'
-              }`}
-            >
-              🔴 Urgent
-            </button>
-            <button
-              onClick={() => setUrgencyFilter('IMPORTANT')}
-              className={`px-2.5 py-1 rounded-md font-medium transition-all ${
-                urgencyFilter === 'IMPORTANT'
-                  ? 'bg-amber-500 text-white shadow-xs'
-                  : 'text-amber-600 dark:text-amber-400 hover:text-amber-700'
-              }`}
-            >
-              🟡 Important
-            </button>
-          </div>
-
-          <button
-            onClick={handleRefresh}
-            title="Refresh inbox"
-            className={`p-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${loading ? 'animate-spin' : ''}`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-        </header>
-
-        {/* Scrollable email area */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto py-4 px-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-              {/* Pagination bar */}
-              <div className="flex items-center justify-between px-5 py-2.5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/60">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {search ? `${filtered.length} of ${emails.length} shown` : `Page ${pageNum}`}
-                  {tab === 'unread' && ` · ${unreadCount} unread`}
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={handlePrev}
-                    disabled={tokenStack.length === 0 || loading}
-                    className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 px-1">{pageNum}</span>
-                  <button
-                    onClick={handleNext}
-                    disabled={!nextToken || loading}
-                    className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 dark:text-gray-300 transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Email rows / Skeleton */}
-              {loading ? (
-                <EmailSkeleton />
-              ) : filtered.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center px-8">
-                  <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/60 rounded-full flex items-center justify-center mb-4">
-                    <svg className="w-8 h-8 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <p className="text-gray-500 dark:text-gray-400 font-medium">
-                    {search ? `No results for "${search}"` : TAB_EMPTY[tab]}
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {filtered.map(email => (
-                    <EmailCard
-                      key={email.id}
-                      email={email}
-                      urgency={urgencyMap[email.id]}
-                      onClick={() => navigate(`/email/${email.id}`, { state: { threadId: email.threadId } })}
-                    />
-                  ))}
-                </div>
+          {/* Bottom Docked Pagination Bar */}
+          <div className="h-12 px-6 border-t border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-surface-darkCard flex items-center justify-between flex-shrink-0">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Page <span className="font-semibold text-slate-900 dark:text-slate-100">{currentPage}</span>
+              {filteredEmails.length > 0 && (
+                <span className="ml-1 text-slate-400 dark:text-slate-500 hidden sm:inline">
+                  • {filteredEmails.length} messages on page
+                </span>
               )}
             </div>
-          </div>
-        </div>
-      </main>
 
-      {/* Shortcuts Modal */}
-      <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrevPage}
+                disabled={currentPage <= 1 || loading}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+
+              <div className="px-2.5 py-0.5 text-xs font-bold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 min-w-[28px] text-center border border-slate-200/50 dark:border-slate-700/50">
+                {currentPage}
+              </div>
+
+              <button
+                onClick={handleNextPage}
+                disabled={!nextPageToken || loading}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* Compose Modal */}
+      <ComposeModal
+        isOpen={isComposeOpen}
+        onClose={() => setIsComposeOpen(false)}
+        onSuccess={() => loadEmails(tab, 1, undefined)}
+      />
     </div>
   );
 };
