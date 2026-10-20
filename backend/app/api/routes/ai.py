@@ -56,13 +56,14 @@ def extract_thread_text(thread: dict) -> str:
 def get_user_llm_config(current_user: User):
     prefs = current_user.preferences or {}
     provider = prefs.get("active_provider", settings.active_provider)
+    gemini_key = (prefs.get("gemini_api_key") or settings.gemini_api_key or "").strip()
     if provider == "gemini":
         model_name = prefs.get("gemini_model", "gemini-2.5-flash")
         if not model_name or "gemini-1." in model_name or "gemini-2.0" in model_name:
             model_name = "gemini-2.5-flash"
     else:
         model_name = prefs.get("ollama_model", settings.ollama_model)
-    return provider, model_name
+    return provider, model_name, gemini_key
 
 
 @router.post("/{email_id}/generate-reply")
@@ -80,7 +81,7 @@ async def generate_reply(
         thread = GmailService.get_thread(oauth_acc, request.thread_id)
         conversation_text = extract_thread_text(thread)
             
-        provider, model_name = get_user_llm_config(current_user)
+        provider, model_name, gemini_key = get_user_llm_config(current_user)
         start_time = time.time()
         reply_text = await AIService.generate_reply(
             conversation_text=conversation_text,
@@ -89,7 +90,8 @@ async def generate_reply(
             user_name=current_user.name or "User",
             user_email=current_user.email or "",
             model_name=model_name,
-            provider=provider
+            provider=provider,
+            api_key=gemini_key
         )
         generation_time = int((time.time() - start_time) * 1000)
         
@@ -133,7 +135,7 @@ async def stream_reply(
     try:
         thread = GmailService.get_thread(oauth_acc, request.thread_id)
         conversation_text = extract_thread_text(thread)
-        provider, model_name = get_user_llm_config(current_user)
+        provider, model_name, gemini_key = get_user_llm_config(current_user)
 
         email = db.query(Email).filter(Email.gmail_message_id == email_id).first()
         if not email:
@@ -170,7 +172,8 @@ async def stream_reply(
                     user_name=current_user.name or "User",
                     user_email=current_user.email or "",
                     model_name=model_name,
-                    provider=provider
+                    provider=provider,
+                    api_key=gemini_key
                 ):
                     accumulated.append(token)
                     yield f"data: {json.dumps({'token': token})}\n\n"
@@ -227,13 +230,14 @@ async def get_quick_replies(
     try:
         thread = GmailService.get_thread(oauth_acc, thread_id)
         conversation_text = extract_thread_text(thread)
-        provider, model_name = get_user_llm_config(current_user)
+        provider, model_name, gemini_key = get_user_llm_config(current_user)
         
         suggestions = await AIService.generate_quick_replies(
             conversation_text, 
             user_name=current_user.name or "User",
             model_name=model_name, 
-            provider=provider
+            provider=provider,
+            api_key=gemini_key
         )
         
         if not email:
@@ -261,13 +265,14 @@ async def get_email_analysis(
     try:
         thread = GmailService.get_thread(oauth_acc, thread_id)
         conversation_text = extract_thread_text(thread)
-        provider, model_name = get_user_llm_config(current_user)
+        provider, model_name, gemini_key = get_user_llm_config(current_user)
 
         analysis = await AIService.analyze_thread(
             conversation_text,
             user_name=current_user.name or "User",
             model_name=model_name,
-            provider=provider
+            provider=provider,
+            api_key=gemini_key
         )
         return analysis
     except Exception:
@@ -297,13 +302,14 @@ async def get_chat_prompts(
     try:
         thread = GmailService.get_thread(oauth_acc, thread_id)
         conversation_text = extract_thread_text(thread)
-        provider, model_name = get_user_llm_config(current_user)
+        provider, model_name, gemini_key = get_user_llm_config(current_user)
 
         prompts = await AIService.generate_chat_prompts(
             conversation_text, 
             user_name=current_user.name or "User",
             model_name=model_name, 
-            provider=provider
+            provider=provider,
+            api_key=gemini_key
         )
         return {"prompts": prompts}
     except Exception:
@@ -328,7 +334,7 @@ async def chat_with_email(
     try:
         thread = GmailService.get_thread(oauth_acc, request.thread_id)
         conversation_text = extract_thread_text(thread)
-        provider, model_name = get_user_llm_config(current_user)
+        provider, model_name, gemini_key = get_user_llm_config(current_user)
 
         history = ChatDB.get_session(email_id, current_user.id)
         user_msg = {"role": "user", "content": request.message, "timestamp": time.time()}
@@ -343,7 +349,8 @@ async def chat_with_email(
                     user_name=current_user.name or "User",
                     user_email=current_user.email or "",
                     model_name=model_name,
-                    provider=provider
+                    provider=provider,
+                    api_key=gemini_key
                 ):
                     accumulated.append(token)
                     yield f"data: {json.dumps({'token': token})}\n\n"
@@ -387,7 +394,7 @@ async def batch_urgency(
     db: Session = Depends(get_db)
 ):
     results = {}
-    provider, model_name = get_user_llm_config(current_user)
+    provider, model_name, gemini_key = get_user_llm_config(current_user)
     for item in req.emails[:15]:  # limit batch size
         email_id = item.get("id")
         subject = item.get("subject", "")
@@ -400,7 +407,7 @@ async def batch_urgency(
         if db_email and db_email.urgency:
             results[email_id] = db_email.urgency
         else:
-            urg = await AIService.classify_urgency(subject, snippet, model_name=model_name, provider=provider)
+            urg = await AIService.classify_urgency(subject, snippet, model_name=model_name, provider=provider, api_key=gemini_key)
             results[email_id] = urg
             if not db_email:
                 db_email = Email(user_id=current_user.id, gmail_message_id=email_id, urgency=urg)
@@ -431,7 +438,7 @@ async def compose_draft(
     db: Session = Depends(get_db)
 ):
     try:
-        user_provider, user_model = get_user_llm_config(current_user)
+        user_provider, user_model, gemini_key = get_user_llm_config(current_user)
         provider = request.provider or user_provider
         model_name = request.model_name or user_model
 
@@ -446,7 +453,8 @@ async def compose_draft(
             user_name=current_user.name or "User",
             user_email=current_user.email or "",
             model_name=model_name,
-            provider=provider
+            provider=provider,
+            api_key=gemini_key
         )
         return {
             "subject": result.get("subject", request.subject or ""),
@@ -454,5 +462,6 @@ async def compose_draft(
             "reply": result.get("reply", "Draft updated.")
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate draft: {str(e)}")
+        status_code = 400 if ("API key is not configured" in str(e) or "not found" in str(e).lower()) else 500
+        raise HTTPException(status_code=status_code, detail=f"{str(e)}")
 

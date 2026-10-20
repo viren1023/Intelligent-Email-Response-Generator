@@ -405,10 +405,14 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
       };
       setChatMessages((prev) => [...prev, assistantBubble]);
     } catch (err: any) {
+      const errDetail =
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Could not complete this draft request. Please ensure the selected AI model/service is running.";
       const errorBubble: ChatBubble = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: "Could not complete this draft request. Please ensure the selected AI model/service is running.",
+        text: errDetail,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setChatMessages((prev) => [...prev, errorBubble]);

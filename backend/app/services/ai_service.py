@@ -40,6 +40,7 @@ Rules:
             
         prompt += f"\nConversation:\n{conversation_text}\n\nReply:"
         return prompt
+
     @staticmethod
     def _sanitize_gemini_model(model_name: Optional[str]) -> str:
         if not model_name or not model_name.strip():
@@ -62,7 +63,11 @@ Rules:
         return f"[Gemini Error (HTTP {status_code}): {error_text[:150]}]"
 
     @staticmethod
-    async def _call_gemini_api(prompt: str, primary_model: Optional[str] = None) -> str:
+    async def _call_gemini_api(prompt: str, primary_model: Optional[str] = None, api_key: Optional[str] = None) -> str:
+        key = (api_key or settings.gemini_api_key or "").strip()
+        if not key:
+            raise Exception("Gemini API key is not configured. Please add your Gemini API key in Settings.")
+
         sanitized = AIService._sanitize_gemini_model(primary_model)
         models_to_try = [sanitized]
         # Allow fallback to gemini-2.5-flash only if primary is transiently busy (503)
@@ -72,7 +77,7 @@ Rules:
         last_error = ""
         async with httpx.AsyncClient(timeout=60) as client:
             for model in models_to_try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.gemini_api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
                 try:
                     res = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
                     if res.status_code == 200:
@@ -106,7 +111,8 @@ Rules:
         user_name: str = "",
         user_email: str = "",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> str:
         tone_instruction = TONE_PROMPTS.get(tone.lower() if tone else "professional", "")
         if tone and tone.lower() not in TONE_PROMPTS and tone.strip():
@@ -127,8 +133,8 @@ Rules:
 4. Return ONLY the email body text.
 """
         prov = provider or settings.active_provider
-        if prov == "gemini" and settings.gemini_api_key:
-            return await AIService._call_gemini_api(full_prompt, model_name)
+        if prov == "gemini":
+            return await AIService._call_gemini_api(full_prompt, model_name, api_key=api_key)
 
         target_model = model_name or settings.ollama_model
         async with httpx.AsyncClient(timeout=settings.ollama_timeout) as client:
@@ -161,7 +167,8 @@ Rules:
         user_name: str = "",
         user_email: str = "",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> Dict[str, str]:
         import json, re
 
@@ -205,8 +212,8 @@ Return ONLY the raw JSON object. Do not wrap in markdown or code blocks.
 """
         prov = provider or settings.active_provider
         raw_output = ""
-        if prov == "gemini" and settings.gemini_api_key:
-            raw_output = await AIService._call_gemini_api(full_prompt, model_name)
+        if prov == "gemini":
+            raw_output = await AIService._call_gemini_api(full_prompt, model_name, api_key=api_key)
         else:
             target_model = model_name or settings.ollama_model
             async with httpx.AsyncClient(timeout=settings.ollama_timeout) as client:
@@ -258,13 +265,14 @@ Return ONLY the raw JSON object. Do not wrap in markdown or code blocks.
         user_name: str = "",
         user_email: str = "",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> str:
         prompt = AIService._build_prompt(conversation_text, custom_instruction, tone, user_name, user_email)
         prov = provider or settings.active_provider
         
-        if prov == "gemini" and settings.gemini_api_key:
-            return await AIService._call_gemini_api(prompt, model_name)
+        if prov == "gemini":
+            return await AIService._call_gemini_api(prompt, model_name, api_key=api_key)
 
         # Default Ollama
         target_model = model_name or settings.ollama_model
@@ -294,14 +302,20 @@ Return ONLY the raw JSON object. Do not wrap in markdown or code blocks.
         user_name: str = "",
         user_email: str = "",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         prompt = AIService._build_prompt(conversation_text, custom_instruction, tone, user_name, user_email)
         prov = provider or settings.active_provider
 
-        if prov == "gemini" and settings.gemini_api_key:
+        if prov == "gemini":
+            key = (api_key or settings.gemini_api_key or "").strip()
+            if not key:
+                yield "\n[Configuration Error: Gemini API key is not configured. Please add your key in Settings.]"
+                return
+
             target_model = AIService._sanitize_gemini_model(model_name)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?alt=sse&key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?alt=sse&key={key}"
             async with httpx.AsyncClient(timeout=60) as client:
                 try:
                     async with client.stream("POST", url, json={"contents": [{"parts": [{"text": prompt}]}]}) as response:
@@ -392,7 +406,8 @@ Return ONLY the raw JSON object. Do not wrap in markdown or code blocks.
         conversation_text: str, 
         user_name: str = "User",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> List[str]:
         prompt = f"""You are an email assistant for {user_name}.
 Based on this email conversation, suggest exactly 3 short, personalized quick-reply options that {user_name} could send back to the sender.
@@ -405,9 +420,10 @@ Output format:
 Return ONLY a valid JSON array of 3 strings. Example: ["Yes, Tuesday works for me!", "I'll review the draft and follow up.", "Could you share the updated budget?"]
 """
         prov = provider or settings.active_provider
-        if prov == "gemini" and settings.gemini_api_key:
+        key = (api_key or settings.gemini_api_key or "").strip()
+        if prov == "gemini" and key:
             target_model = AIService._sanitize_gemini_model(model_name)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={key}"
             async with httpx.AsyncClient(timeout=15) as client:
                 try:
                     res = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -445,7 +461,8 @@ Return ONLY a valid JSON array of 3 strings. Example: ["Yes, Tuesday works for m
         conversation_text: str,
         user_name: str = "User",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> List[str]:
         prompt = f"""You are an intelligent email context analyst.
 Based on the following email conversation, generate 3 specific, helpful quick prompt questions that the user ({user_name}) might want to ask about this thread.
@@ -458,9 +475,10 @@ Requirements:
 - Return ONLY a JSON array of 3 strings. Example: ["Summarize John's feedback on the proposal.", "What deadlines were requested for this project?", "Draft a polite acceptance for the requested revisions."]
 """
         prov = provider or settings.active_provider
-        if prov == "gemini" and settings.gemini_api_key:
+        key = (api_key or settings.gemini_api_key or "").strip()
+        if prov == "gemini" and key:
             target_model = AIService._sanitize_gemini_model(model_name)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={key}"
             async with httpx.AsyncClient(timeout=15) as client:
                 try:
                     res = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -498,7 +516,7 @@ Requirements:
         ]
 
     @staticmethod
-    async def classify_urgency(subject: str, snippet: str, model_name: Optional[str] = None, provider: Optional[str] = None) -> str:
+    async def classify_urgency(subject: str, snippet: str, model_name: Optional[str] = None, provider: Optional[str] = None, api_key: Optional[str] = None) -> str:
         prompt = f"""Classify the urgency of the following email into one of these three exact labels:
 - URGENT (immediate action/crisis/deadline today)
 - IMPORTANT (action required, standard priority)
@@ -510,9 +528,10 @@ Snippet: {snippet}
 Reply with ONLY ONE WORD from: URGENT, IMPORTANT, NORMAL.
 """
         prov = provider or settings.active_provider
-        if prov == "gemini" and settings.gemini_api_key:
+        key = (api_key or settings.gemini_api_key or "").strip()
+        if prov == "gemini" and key:
             target_model = AIService._sanitize_gemini_model(model_name)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={key}"
             async with httpx.AsyncClient(timeout=10) as client:
                 try:
                     res = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -550,7 +569,8 @@ Reply with ONLY ONE WORD from: URGENT, IMPORTANT, NORMAL.
         conversation_text: str,
         user_name: str = "User",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> Dict[str, Any]:
         prompt = f"""You are an intelligent email copilot for {user_name}.
 Analyze the following email thread:
@@ -572,9 +592,10 @@ Respond ONLY with valid JSON in this exact structure without markdown ticks:
 }}
 """
         prov = provider or settings.active_provider
-        if prov == "gemini" and settings.gemini_api_key:
+        key = (api_key or settings.gemini_api_key or "").strip()
+        if prov == "gemini" and key:
             target_model = AIService._sanitize_gemini_model(model_name)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={key}"
             async with httpx.AsyncClient(timeout=15) as client:
                 try:
                     res = await client.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -625,7 +646,8 @@ Respond ONLY with valid JSON in this exact structure without markdown ticks:
         user_name: str = "",
         user_email: str = "",
         model_name: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         system_instruction = f"""You are an intelligent email assistant. You are helping the user (Name: {user_name}, Email: {user_email}) with the following email conversation:
 
@@ -643,9 +665,14 @@ CRITICAL PERSPECTIVE RULE: When drafting or generating an email reply, you must 
         formatted_prompt += "Assistant: "
 
         prov = provider or settings.active_provider
-        if prov == "gemini" and settings.gemini_api_key:
+        if prov == "gemini":
+            key = (api_key or settings.gemini_api_key or "").strip()
+            if not key:
+                yield "\n[Configuration Error: Gemini API key is not configured. Please add your key in Settings.]"
+                return
+
             target_model = AIService._sanitize_gemini_model(model_name)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?alt=sse&key={settings.gemini_api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?alt=sse&key={key}"
             async with httpx.AsyncClient(timeout=60) as client:
                 try:
                     async with client.stream("POST", url, json={"contents": [{"parts": [{"text": formatted_prompt}]}]}) as response:

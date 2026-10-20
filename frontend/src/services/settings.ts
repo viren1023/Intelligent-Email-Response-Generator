@@ -43,5 +43,13 @@ export const settingsService = {
   setGeminiKey: async (apiKey: string): Promise<{ status: string; masked_key: string }> => {
     const res = await api.patch('/api/settings/gemini-key', { api_key: apiKey });
     return res.data;
+  },
+  deleteGeminiKey: async (): Promise<{ status: string }> => {
+    const res = await api.delete('/api/settings/gemini-key');
+    return res.data;
+  },
+  testGeminiKey: async (apiKey?: string): Promise<{ status: string; models_count?: number; detail?: string }> => {
+    const res = await api.post('/api/settings/gemini-key/test', apiKey ? { api_key: apiKey } : {});
+    return res.data;
   }
 };
