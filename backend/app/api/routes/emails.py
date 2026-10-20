@@ -11,6 +11,27 @@ import datetime
 
 router = APIRouter()
 
+def clean_email_content(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    import re
+    # 1. Remove Outlook MSO blocks (e.g. <!--[if mso]>...<![endif]-->)
+    text = re.sub(r'<!--\[if\s+(?:gte\s+)?mso[\s\S]*?<!\[endif\]-->', '', raw_text, flags=re.IGNORECASE)
+    # 2. Strip standalone conditional comments
+    text = re.sub(r'<!--\[if[^>]*-->', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!--\[if[^\]]*\]>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!--<!\[endif\]-->', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!\[endif\]-->', '', text, flags=re.IGNORECASE)
+    # 3. Strip standard HTML comments
+    text = re.sub(r'<!--[\s\S]*?-->', '', text)
+    # 4. Strip VML and Office XML tags
+    text = re.sub(r'<\/?(?:v|w|o|m|x):[^>]*>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<\?xml[^>]*\?>', '', text, flags=re.IGNORECASE)
+    # 5. Clean mangled link artifacts
+    text = re.sub(r'<\[([\s\S]*?)\]\((https?:\/\/[^\s)]+)\)>', r'<\2>', text)
+    return text.strip()
+
+
 # Gmail query per inbox tab
 TAB_QUERIES = {
     "primary": "in:inbox -category:promotions -category:social -category:updates",
@@ -156,7 +177,7 @@ def get_email_thread(
                         pass
                 return text_plain or text_html
 
-            body = extract_body(msg['payload'])
+            body = clean_email_content(extract_body(msg['payload']))
                 
             messages.append({
                 'id': msg['id'],

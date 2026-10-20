@@ -4,65 +4,146 @@ interface FormattedEmailBodyProps {
   body: string;
 }
 
+/**
+ * Strips Outlook conditional comments, VML markup, Office XML tags,
+ * and recovers any mangled link artifacts.
+ */
+export function cleanEmailRaw(text: string): string {
+  if (!text) return '';
+
+  let cleaned = text
+    // 1. Remove Outlook MSO conditional blocks: <!--[if mso]>...<![endif]-->
+    .replace(/<!--\[if\s+(?:gte\s+)?mso[\s\S]*?<!\[endif\]-->/gi, '')
+    // 2. Remove standalone conditional comments: <!--[if !mso]><!-->, <!--[if false]><!-->, etc.
+    .replace(/<!--\[if[^>]*-->/gi, '')
+    .replace(/<!--\[if[^\]]*\]>/gi, '')
+    .replace(/<!--<!\[endif\]-->/gi, '')
+    .replace(/<!\[endif\]-->/gi, '')
+    // 3. Remove standard HTML comments <!-- ... -->
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // 4. Remove VML and Office XML tags (<v:...>, <w:...>, <o:...>)
+    .replace(/<\/?(?:v|w|o|m|x):[^>]*>/gi, '')
+    .replace(/<\?xml[^>]*\?>/gi, '')
+    // 5. Clean mangled link artifacts <[...](...)>
+    .replace(/<\[([\s\S]*?)\]\((https?:\/\/[^\s)]+)\)>/g, (_m, label, url) => {
+      const urlMatch = label.match(/https?:\/\/[^\s"'<>]+/);
+      const targetUrl = urlMatch ? urlMatch[0] : url.replace(/%3Cem%20class=/gi, '').trim();
+      return `<${targetUrl}>`;
+    });
+
+  return cleaned;
+}
+
 function parseMarkdownToHtml(raw: string): string {
   if (!raw) return '';
 
-  let html = raw
-    // Escape standard HTML special characters first
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  let text = cleanEmailRaw(raw);
 
-  // Code blocks: ```lang\ncode\n```
-  html = html.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    return `<pre class="my-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono overflow-x-auto"><code class="language-${lang}">${code.trim()}</code></pre>`;
+  // 1. Preserve Code blocks
+  const codeBlocks: string[] = [];
+  text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(
+      `<pre class="my-2 p-3 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono overflow-x-auto"><code class="language-${lang}">${code.trim()}</code></pre>`
+    );
+    return `__CODE_BLOCK_${idx}__`;
   });
 
-  // Inline code: `code`
-  html = html.replace(/`([^`\n]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-purple-600 dark:text-purple-300 font-mono text-[11px]">$1</code>');
+  // 2. Preserve Links (Markdown links and Autolinks) with unique placeholders
+  const links: string[] = [];
+  function saveLink(label: string, url: string): string {
+    const idx = links.length;
+    const cleanUrl = url.replace(/%3Cem%20class=/gi, '').trim();
+    let display = label.trim();
+    // Shorten excessively long tracking URLs for clean readable UI
+    if (display.length > 55 && (display.startsWith('http://') || display.startsWith('https://'))) {
+      display = display.slice(0, 40) + '...' + display.slice(-10);
+    }
+    links.push(
+      `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="text-brand-purple hover:underline break-all font-medium">${display}</a>`
+    );
+    return `__LINK_BLOCK_${idx}__`;
+  }
 
-  // Headings: ###, ##, #
-  html = html.replace(/^### (.*$)/gim, '<h3 class="text-sm font-bold text-slate-900 dark:text-white mt-3 mb-1.5">$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2 class="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2">$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1 class="text-lg font-extrabold text-slate-900 dark:text-white mt-4 mb-2.5">$1</h1>');
+  // Markdown links: [label](url)
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) => saveLink(label, url));
 
-  // Markdown links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-purple hover:underline font-semibold">$1</a>');
+  // Autolinks: <https://...>
+  text = text.replace(/<((?:https?:\/\/)[^\s>]+)>/g, (_m, url) => saveLink(url, url));
 
-  // Raw URLs not inside an href
-  html = html.replace(/(^|[^"'])(https?:\/\/[^\s&<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer" class="text-brand-purple hover:underline break-all">$2</a>');
+  // Standalone Raw URLs (not preceded by href= or quotation)
+  text = text.replace(/(?<![="'>/])\bhttps?:\/\/[^\s<>\(\)]+/g, (url) => saveLink(url, url));
 
-  // Bold + Italic: ***text***
-  html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<strong class="font-bold"><em class="italic">$1</em></strong>');
+  // 3. Escape HTML characters in remaining text
+  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // Bold: **text** or __text__
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
-  html = html.replace(/__(.*?)__/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
+  // 4. Headings: ###, ##, #
+  text = text.replace(/^### (.*$)/gim, '<h3 class="text-sm font-bold text-slate-900 dark:text-white mt-3 mb-1.5">$1</h3>');
+  text = text.replace(/^## (.*$)/gim, '<h2 class="text-base font-bold text-slate-900 dark:text-white mt-4 mb-2">$1</h2>');
+  text = text.replace(/^# (.*$)/gim, '<h1 class="text-lg font-extrabold text-slate-900 dark:text-white mt-4 mb-2.5">$1</h1>');
 
-  // Italic: *text* or _text_
-  html = html.replace(/\*([^\*\n]+)\*/g, '<em class="italic">$1</em>');
-  html = html.replace(/_([^_\n]+)_/g, '<em class="italic">$1</em>');
+  // 5. Inline code: `code`
+  text = text.replace(/`([^`\n]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-purple-600 dark:text-purple-300 font-mono text-[11px]">$1</code>');
 
-  // Strikethrough: ~~text~~
-  html = html.replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>');
+  // 6. Bold: **text** or __text__
+  text = text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>');
+  text = text.replace(/(^|[^\w])__(.*?)__([^\w]|$)/g, '$1<strong class="font-bold text-slate-900 dark:text-white">$2</strong>$3');
 
-  // Process paragraphs & blockquotes & lists:
-  const lines = html.split('\n');
+  // 7. Italic: require non-word boundaries so underscores inside words or URLs are NEVER converted
+  text = text.replace(/(^|[^\w])\*([^\*\n]+)\*([^\w]|$)/g, '$1<em class="italic">$2</em>$3');
+  text = text.replace(/(^|[^\w])_([^_\n]+)_([^\w]|$)/g, '$1<em class="italic">$2</em>$3');
+
+  // 8. Strikethrough: ~~text~~
+  text = text.replace(/~~(.*?)~~/g, '<del class="line-through text-slate-400">$1</del>');
+
+  // 9. Restore Links and Code Blocks
+  for (let i = 0; i < links.length; i++) {
+    text = text.replace(`__LINK_BLOCK_${i}__`, links[i]);
+  }
+  for (let i = 0; i < codeBlocks.length; i++) {
+    text = text.replace(`__CODE_BLOCK_${i}__`, codeBlocks[i]);
+  }
+
+  // 10. Process paragraphs & blockquotes & lists
+  const lines = text.split('\n');
+  const cleanedLines: string[] = [];
+
+  for (const l of lines) {
+    const s = l.trim();
+    if (!s) {
+      if (cleanedLines.length > 0 && cleanedLines[cleanedLines.length - 1] !== '') {
+        cleanedLines.push('');
+      }
+      continue;
+    }
+    // Deduplicate consecutive identical lines (from fallback templates)
+    if (cleanedLines.length > 0 && s === cleanedLines[cleanedLines.length - 1]) {
+      continue;
+    }
+    cleanedLines.push(s);
+  }
+
   const result: string[] = [];
   let inList = false;
   let inBlockquote = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
+  for (let i = 0; i < cleanedLines.length; i++) {
+    const line = cleanedLines[i];
+
+    if (!line) {
+      if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false; }
+      if (inList) { result.push('</ul>'); inList = false; }
+      result.push('<div class="h-2"></div>');
+      continue;
+    }
 
     // Blockquote
-    if (trimmed.startsWith('&gt;')) {
+    if (line.startsWith('&gt;')) {
       if (!inBlockquote) {
         result.push('<blockquote class="border-l-2 border-purple-400 dark:border-purple-600 pl-3 my-2 text-slate-600 dark:text-slate-300 italic">');
         inBlockquote = true;
       }
-      result.push(`<p class="leading-relaxed">${trimmed.replace(/^&gt;\s?/, '')}</p>`);
+      result.push(`<p class="leading-relaxed">${line.replace(/^&gt;\s?/, '')}</p>`);
       continue;
     } else if (inBlockquote) {
       result.push('</blockquote>');
@@ -70,25 +151,18 @@ function parseMarkdownToHtml(raw: string): string {
     }
 
     // List item (- or *)
-    if (/^[-*]\s+(.*)/.test(trimmed)) {
+    if (/^[-*]\s+(.*)/.test(line)) {
       if (!inList) {
         result.push('<ul class="list-disc pl-5 my-2 space-y-1">');
         inList = true;
       }
-      result.push(`<li>${trimmed.replace(/^[-*]\s+/, '')}</li>`);
+      result.push(`<li>${line.replace(/^[-*]\s+/, '')}</li>`);
       continue;
     } else if (inList) {
       result.push('</ul>');
       inList = false;
     }
 
-    // Blank line
-    if (!trimmed) {
-      result.push('<div class="h-2"></div>');
-      continue;
-    }
-
-    // Regular line / paragraph
     result.push(`<p class="mb-1 leading-relaxed">${line}</p>`);
   }
 
@@ -105,9 +179,18 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
     return (
       lower.includes('<html') ||
       lower.includes('<!doctype') ||
+      lower.includes('<table') ||
+      lower.includes('<tbody') ||
       (lower.includes('<div') && lower.includes('</div>')) ||
-      (lower.includes('<p>') && lower.includes('</p>'))
+      (lower.includes('<p>') && lower.includes('</p>')) ||
+      lower.includes('<br/>') ||
+      lower.includes('<br>')
     );
+  }, [body]);
+
+  const sanitizedBody = useMemo(() => {
+    if (!body) return '';
+    return cleanEmailRaw(body);
   }, [body]);
 
   if (!body) {
@@ -119,7 +202,7 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
     return (
       <div
         className="email-html-body text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200 overflow-x-auto max-w-full [&_a]:text-brand-purple [&_a]:underline [&_a]:break-all [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-        dangerouslySetInnerHTML={{ __html: body }}
+        dangerouslySetInnerHTML={{ __html: sanitizedBody }}
       />
     );
   }

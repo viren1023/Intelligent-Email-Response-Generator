@@ -17,6 +17,27 @@ import base64
 
 router = APIRouter()
 
+def clean_email_content(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    import re
+    # 1. Remove Outlook MSO blocks (e.g. <!--[if mso]>...<![endif]-->)
+    text = re.sub(r'<!--\[if\s+(?:gte\s+)?mso[\s\S]*?<!\[endif\]-->', '', raw_text, flags=re.IGNORECASE)
+    # 2. Strip standalone conditional comments
+    text = re.sub(r'<!--\[if[^>]*-->', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!--\[if[^\]]*\]>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!--<!\[endif\]-->', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!\[endif\]-->', '', text, flags=re.IGNORECASE)
+    # 3. Strip standard HTML comments
+    text = re.sub(r'<!--[\s\S]*?-->', '', text)
+    # 4. Strip VML and Office XML tags
+    text = re.sub(r'<\/?(?:v|w|o|m|x):[^>]*>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<\?xml[^>]*\?>', '', text, flags=re.IGNORECASE)
+    # 5. Clean mangled link artifacts
+    text = re.sub(r'<\[([\s\S]*?)\]\((https?:\/\/[^\s)]+)\)>', r'<\2>', text)
+    return text.strip()
+
+
 class GenerateRequest(BaseModel):
     thread_id: str
     custom_instruction: Optional[str] = None
@@ -50,7 +71,8 @@ def extract_thread_text(thread: dict) -> str:
             except Exception:
                 pass
         if body:
-            conversation_text += f"From: {from_header}\n\n{body}\n\n{'='*40}\n\n"
+            cleaned_body = clean_email_content(body)
+            conversation_text += f"From: {from_header}\n\n{cleaned_body}\n\n{'='*40}\n\n"
     
     return conversation_text.strip()
 def get_user_llm_config(current_user: User):

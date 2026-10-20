@@ -59,3 +59,5 @@ backend/data/*.db
 
 # Planning Docs
 *.md
+
+DOCS
