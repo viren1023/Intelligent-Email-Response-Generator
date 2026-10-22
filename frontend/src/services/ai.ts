@@ -192,3 +192,20 @@ export const aiService = {
     return res.data;
   }
 };
+
+export function isAiErrorMessage(text: string): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  return (
+    (t.startsWith('[') && t.endsWith(']')) ||
+    t.includes('Quota Exceeded') ||
+    t.includes('Usage limit reached') ||
+    t.includes('Model Unavailable') ||
+    t.includes('Model Busy') ||
+    t.includes('Authentication Error') ||
+    t.includes('Gemini Error') ||
+    t.includes('RESOURCE_EXHAUSTED') ||
+    t.includes('Could not complete this draft request') ||
+    t.includes('Could not generate smart reply')
+  );
+}

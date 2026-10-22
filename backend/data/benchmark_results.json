@@ -1,0 +1,798 @@
+{
+  "summary": {
+    "mistral:7b": {
+      "3_class_accuracy": 93.33,
+      "binary_accuracy": 93.33,
+      "binary_precision": 100.0,
+      "binary_recall": 90.0,
+      "binary_f1": 94.74,
+      "avg_classify_latency_sec": 0.96,
+      "avg_generate_latency_sec": 6.76,
+      "avg_rouge1": 0.4947,
+      "avg_rougel": 0.4185,
+      "deictic_accuracy": 100.0,
+      "confusion_3x3": {
+        "URGENT": {
+          "URGENT": 10,
+          "IMPORTANT": 0,
+          "NORMAL": 0,
+          "UNKNOWN": 0
+        },
+        "IMPORTANT": {
+          "URGENT": 0,
+          "IMPORTANT": 8,
+          "NORMAL": 2,
+          "UNKNOWN": 0
+        },
+        "NORMAL": {
+          "URGENT": 0,
+          "IMPORTANT": 0,
+          "NORMAL": 10,
+          "UNKNOWN": 0
+        }
+      },
+      "binary_matrix": {
+        "TP": 18,
+        "FN": 2,
+        "FP": 0,
+        "TN": 10
+      }
+    },
+    "qwen2.5:7b": {
+      "3_class_accuracy": 93.33,
+      "binary_accuracy": 93.33,
+      "binary_precision": 100.0,
+      "binary_recall": 90.0,
+      "binary_f1": 94.74,
+      "avg_classify_latency_sec": 0.69,
+      "avg_generate_latency_sec": 2.84,
+      "avg_rouge1": 0.4229,
+      "avg_rougel": 0.3684,
+      "deictic_accuracy": 100.0,
+      "confusion_3x3": {
+        "URGENT": {
+          "URGENT": 10,
+          "IMPORTANT": 0,
+          "NORMAL": 0,
+          "UNKNOWN": 0
+        },
+        "IMPORTANT": {
+          "URGENT": 0,
+          "IMPORTANT": 8,
+          "NORMAL": 2,
+          "UNKNOWN": 0
+        },
+        "NORMAL": {
+          "URGENT": 0,
+          "IMPORTANT": 0,
+          "NORMAL": 10,
+          "UNKNOWN": 0
+        }
+      },
+      "binary_matrix": {
+        "TP": 18,
+        "FN": 2,
+        "FP": 0,
+        "TN": 10
+      }
+    }
+  },
+  "raw": {
+    "mistral:7b": {
+      "classification": [
+        {
+          "id": 1,
+          "subject": "CRITICAL: Database primary node down, failover failed",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 12.102,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 2,
+          "subject": "URGENT: SSL Certificate Expiring at Midnight Tonight",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.572,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 3,
+          "subject": "ACTION REQUIRED: Production security vulnerability CVE-2026-8910",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.597,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 4,
+          "subject": "Immediate Action: Payroll gateway failing for EU employees",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.615,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 5,
+          "subject": "Emergency: Ransomware alert detected on file server",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.58,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 6,
+          "subject": "URGENT: Client contract renewal deadline today 6pm",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.65,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 7,
+          "subject": "Urgent: Cloud quota exhausted, builds halted",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.593,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 8,
+          "subject": "URGENT: Office building power outage scheduled in 30 mins",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.569,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 9,
+          "subject": "Immediate reply requested: Customer escalations lead resignation",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.586,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 10,
+          "subject": "CRITICAL ALERT: Payment processing error rate spike 45%",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.583,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 11,
+          "subject": "Feedback needed on Q4 Engineering Roadmap",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.606,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 12,
+          "subject": "Invoice #8921 pending review and manager sign-off",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.548,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 13,
+          "subject": "Reschedule: 1-on-1 Sync with Engineering Lead",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.589,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 14,
+          "subject": "Candidate Interview Feedback - Senior Backend Engineer",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.632,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 15,
+          "subject": "Action item from Sprint Retrospective: Update API docs",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.535,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 16,
+          "subject": "Draft Proposal for Client Onboarding Automation",
+          "expected": "IMPORTANT",
+          "predicted": "NORMAL",
+          "correct": false,
+          "latency_sec": 0.539,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 17,
+          "subject": "Quarterly OKR Review Preparation",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.612,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 18,
+          "subject": "Vendor Agreement Review: MongoDB Atlas Enterprise",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.636,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 19,
+          "subject": "Design Review: Mobile Navigation Redesign v2",
+          "expected": "IMPORTANT",
+          "predicted": "NORMAL",
+          "correct": false,
+          "latency_sec": 0.629,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 20,
+          "subject": "Travel expense reimbursement submitted for approval",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.693,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 21,
+          "subject": "Dark mode is now available on desktop \ud83c\udf19",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.503,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 22,
+          "subject": "Weekly Tech Digest: Issue #142",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.586,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 23,
+          "subject": "Welcome to GitHub Copilot Enterprise!",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.51,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 24,
+          "subject": "Company All-Hands Meeting Recording Available",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.517,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 25,
+          "subject": "Changelog: Platform Release v2.8.4",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.515,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 26,
+          "subject": "Your monthly Grammarly activity report",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.494,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 27,
+          "subject": "Slack: New emoji reactions added to workspace",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.53,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 28,
+          "subject": "Webinar invitation: Scaling Microservices with Kubernetes",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.5,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 29,
+          "subject": "Order Confirmation: Receipt #98214 from Office Depot",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.553,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 30,
+          "subject": "Security Tip of the Month: Multi-Factor Authentication",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.515,
+          "raw_response": "NORMAL"
+        }
+      ],
+      "latencies": [
+        12.101632118225098,
+        0.5717132091522217,
+        0.5973834991455078,
+        0.6150293350219727,
+        0.5801334381103516,
+        0.649970293045044,
+        0.5925452709197998,
+        0.568791389465332,
+        0.585979700088501,
+        0.5828869342803955,
+        0.6058824062347412,
+        0.5477602481842041,
+        0.5892500877380371,
+        0.6324994564056396,
+        0.5353207588195801,
+        0.5386159420013428,
+        0.6121695041656494,
+        0.6360604763031006,
+        0.6285064220428467,
+        0.6925945281982422,
+        0.502640962600708,
+        0.5862107276916504,
+        0.5098772048950195,
+        0.5166871547698975,
+        0.5145606994628906,
+        0.49369120597839355,
+        0.5295791625976562,
+        0.5000553131103516,
+        0.5527141094207764,
+        0.5146517753601074
+      ],
+      "confusion_3x3": {
+        "URGENT": {
+          "URGENT": 10,
+          "IMPORTANT": 0,
+          "NORMAL": 0,
+          "UNKNOWN": 0
+        },
+        "IMPORTANT": {
+          "URGENT": 0,
+          "IMPORTANT": 8,
+          "NORMAL": 2,
+          "UNKNOWN": 0
+        },
+        "NORMAL": {
+          "URGENT": 0,
+          "IMPORTANT": 0,
+          "NORMAL": 10,
+          "UNKNOWN": 0
+        }
+      },
+      "generation": [
+        {
+          "id": "gen-1",
+          "tone": "professional",
+          "draft": "Hi David,\n\nThank you for your email. I'm currently working on the revised budget spreadsheet for Q3 and I will do my best to have it to you by tomorrow at noon as requested. I appreciate your patience and understanding.\n\nBest,\nEmily",
+          "gold": "Hi David,\n\nI will review the revised Q3 budget spreadsheet and send it over before noon tomorrow.\n\nBest regards,\nEmily",
+          "latency_sec": 6.888,
+          "rouge1": 0.4762,
+          "rougel": 0.381,
+          "deictic_correct": true
+        },
+        {
+          "id": "gen-2",
+          "tone": "friendly",
+          "draft": "Hi Sarah,\n\nGreat to hear from you! Yes, I'm still looking forward to our lunch today. Let's meet at the Italian bistro near the plaza at 1 PM as planned. I'll see you then!\n\nBest,\nEmily",
+          "gold": "Hey Sarah,\n\nYes, absolutely! I look forward to meeting you at 1 PM at the Italian bistro.\n\nSee you soon,\nEmily",
+          "latency_sec": 6.735,
+          "rouge1": 0.5333,
+          "rougel": 0.4,
+          "deictic_correct": true
+        },
+        {
+          "id": "gen-3",
+          "tone": "concise",
+          "draft": "Hi Marcus,\n\nI haven't received any confirmation regarding the client's approval of the project scope document yet. I'll follow up with them today and let you know as soon as I have an update.\n\nBest,\nEmily",
+          "gold": "Hi Marcus,\n\nNot yet, I am following up with them today and will let you know once approved.\n\nBest,\nEmily",
+          "latency_sec": 6.667,
+          "rouge1": 0.4746,
+          "rougel": 0.4746,
+          "deictic_correct": true
+        }
+      ]
+    },
+    "qwen2.5:7b": {
+      "classification": [
+        {
+          "id": 1,
+          "subject": "CRITICAL: Database primary node down, failover failed",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 11.177,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 2,
+          "subject": "URGENT: SSL Certificate Expiring at Midnight Tonight",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.412,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 3,
+          "subject": "ACTION REQUIRED: Production security vulnerability CVE-2026-8910",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.438,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 4,
+          "subject": "Immediate Action: Payroll gateway failing for EU employees",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.443,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 5,
+          "subject": "Emergency: Ransomware alert detected on file server",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.38,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 6,
+          "subject": "URGENT: Client contract renewal deadline today 6pm",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.427,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 7,
+          "subject": "Urgent: Cloud quota exhausted, builds halted",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.44,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 8,
+          "subject": "URGENT: Office building power outage scheduled in 30 mins",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.431,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 9,
+          "subject": "Immediate reply requested: Customer escalations lead resignation",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.422,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 10,
+          "subject": "CRITICAL ALERT: Payment processing error rate spike 45%",
+          "expected": "URGENT",
+          "predicted": "URGENT",
+          "correct": true,
+          "latency_sec": 0.412,
+          "raw_response": "URGENT"
+        },
+        {
+          "id": 11,
+          "subject": "Feedback needed on Q4 Engineering Roadmap",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.265,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 12,
+          "subject": "Invoice #8921 pending review and manager sign-off",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.284,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 13,
+          "subject": "Reschedule: 1-on-1 Sync with Engineering Lead",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.296,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 14,
+          "subject": "Candidate Interview Feedback - Senior Backend Engineer",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.31,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 15,
+          "subject": "Action item from Sprint Retrospective: Update API docs",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.31,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 16,
+          "subject": "Draft Proposal for Client Onboarding Automation",
+          "expected": "IMPORTANT",
+          "predicted": "NORMAL",
+          "correct": false,
+          "latency_sec": 0.264,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 17,
+          "subject": "Quarterly OKR Review Preparation",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.261,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 18,
+          "subject": "Vendor Agreement Review: MongoDB Atlas Enterprise",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.361,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 19,
+          "subject": "Design Review: Mobile Navigation Redesign v2",
+          "expected": "IMPORTANT",
+          "predicted": "IMPORTANT",
+          "correct": true,
+          "latency_sec": 0.275,
+          "raw_response": "IMPORTANT"
+        },
+        {
+          "id": 20,
+          "subject": "Travel expense reimbursement submitted for approval",
+          "expected": "IMPORTANT",
+          "predicted": "NORMAL",
+          "correct": false,
+          "latency_sec": 0.279,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 21,
+          "subject": "Dark mode is now available on desktop \ud83c\udf19",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.3,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 22,
+          "subject": "Weekly Tech Digest: Issue #142",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.282,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 23,
+          "subject": "Welcome to GitHub Copilot Enterprise!",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.292,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 24,
+          "subject": "Company All-Hands Meeting Recording Available",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.314,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 25,
+          "subject": "Changelog: Platform Release v2.8.4",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.284,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 26,
+          "subject": "Your monthly Grammarly activity report",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.308,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 27,
+          "subject": "Slack: New emoji reactions added to workspace",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.287,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 28,
+          "subject": "Webinar invitation: Scaling Microservices with Kubernetes",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.288,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 29,
+          "subject": "Order Confirmation: Receipt #98214 from Office Depot",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.273,
+          "raw_response": "NORMAL"
+        },
+        {
+          "id": 30,
+          "subject": "Security Tip of the Month: Multi-Factor Authentication",
+          "expected": "NORMAL",
+          "predicted": "NORMAL",
+          "correct": true,
+          "latency_sec": 0.271,
+          "raw_response": "NORMAL"
+        }
+      ],
+      "latencies": [
+        11.176892757415771,
+        0.41197705268859863,
+        0.43790316581726074,
+        0.44275641441345215,
+        0.3801872730255127,
+        0.4272196292877197,
+        0.4397857189178467,
+        0.43122267723083496,
+        0.4218933582305908,
+        0.41202282905578613,
+        0.26461076736450195,
+        0.2843294143676758,
+        0.29552626609802246,
+        0.3101322650909424,
+        0.31043076515197754,
+        0.263932466506958,
+        0.26117825508117676,
+        0.3612041473388672,
+        0.27492213249206543,
+        0.2790837287902832,
+        0.2997710704803467,
+        0.2820122241973877,
+        0.29244422912597656,
+        0.31415462493896484,
+        0.28446078300476074,
+        0.3082756996154785,
+        0.2868359088897705,
+        0.28819751739501953,
+        0.2733886241912842,
+        0.2712407112121582
+      ],
+      "confusion_3x3": {
+        "URGENT": {
+          "URGENT": 10,
+          "IMPORTANT": 0,
+          "NORMAL": 0,
+          "UNKNOWN": 0
+        },
+        "IMPORTANT": {
+          "URGENT": 0,
+          "IMPORTANT": 8,
+          "NORMAL": 2,
+          "UNKNOWN": 0
+        },
+        "NORMAL": {
+          "URGENT": 0,
+          "IMPORTANT": 0,
+          "NORMAL": 10,
+          "UNKNOWN": 0
+        }
+      },
+      "generation": [
+        {
+          "id": "gen-1",
+          "tone": "professional",
+          "draft": "Sure, David. I'll send the revised budget spreadsheet for Q3 over by noon tomorrow as requested. I'll double-check all the numbers to ensure accuracy. Looking forward to the meeting.",
+          "gold": "Hi David,\n\nI will review the revised Q3 budget spreadsheet and send it over before noon tomorrow.\n\nBest regards,\nEmily",
+          "latency_sec": 3.188,
+          "rouge1": 0.4231,
+          "rougel": 0.3462,
+          "deictic_correct": true
+        },
+        {
+          "id": "gen-2",
+          "tone": "friendly",
+          "draft": "Hi Sarah,\n\nYes, we are still on for lunch today at 1 PM at the Italian bistro near the plaza. I can't wait! See you then!\n\nBest,\nEmily",
+          "gold": "Hey Sarah,\n\nYes, absolutely! I look forward to meeting you at 1 PM at the Italian bistro.\n\nSee you soon,\nEmily",
+          "latency_sec": 3.031,
+          "rouge1": 0.52,
+          "rougel": 0.48,
+          "deictic_correct": true
+        },
+        {
+          "id": "gen-3",
+          "tone": "concise",
+          "draft": "I haven't received any approval from the client yet, Marcus. I'll follow up with them today to check on the status.",
+          "gold": "Hi Marcus,\n\nNot yet, I am following up with them today and will let you know once approved.\n\nBest,\nEmily",
+          "latency_sec": 2.297,
+          "rouge1": 0.3256,
+          "rougel": 0.2791,
+          "deictic_correct": true
+        }
+      ]
+    }
+  }
+}

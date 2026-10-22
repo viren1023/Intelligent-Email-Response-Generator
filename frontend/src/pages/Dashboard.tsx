@@ -166,22 +166,18 @@ export const Dashboard: React.FC = () => {
     if (categoryFilter === 'Important') {
       list = list.filter(
         (e) =>
-          e.is_unread ||
-          e.subject.toLowerCase().includes('important') ||
-          e.snippet.toLowerCase().includes('important')
+          !/\b(newsletter|announcement|digest|dark mode|release notes|weekly|monthly|update available)\b/i.test(e.subject + ' ' + e.snippet) &&
+          /\b(important|action required|priority|invoice|payment|contract|billing|security alert|action needed)\b/i.test(e.subject + ' ' + e.snippet)
       );
     } else if (categoryFilter === 'Urgent') {
       list = list.filter(
         (e) =>
-          e.subject.toLowerCase().includes('urgent') ||
-          e.snippet.toLowerCase().includes('urgent') ||
-          e.snippet.toLowerCase().includes('asap')
+          /\b(urgent|immediate|asap|critical|expiring|deadline|emergency)\b/i.test(e.subject + ' ' + e.snippet)
       );
     } else if (categoryFilter === 'Other') {
       list = list.filter(
         (e) =>
-          !e.subject.toLowerCase().includes('urgent') &&
-          !e.is_unread
+          !/\b(urgent|immediate|asap|critical|expiring|deadline|emergency|important|action required|priority|invoice|payment|contract|billing|security alert|action needed)\b/i.test(e.subject + ' ' + e.snippet)
       );
     }
 
@@ -228,7 +224,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleOpenEmail = (email: EmailMetadata) => {
-    navigate(`/email/${email.id}`, { state: { threadId: email.threadId } });
+    navigate(`/email/${email.id}?fromTab=${tab}`, { state: { threadId: email.threadId, fromTab: tab } });
   };
 
   const handleToggleRead = async (email: EmailMetadata, e: React.MouseEvent) => {
@@ -305,7 +301,7 @@ export const Dashboard: React.FC = () => {
         {/* Central Email Column */}
         <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-surface-darkCard overflow-hidden">
           {/* Filter Tabs Bar with Distinct Color Shade */}
-          <div className="px-6 py-2.5 border-b border-slate-200/70 dark:border-slate-800/70 flex items-center justify-between flex-shrink-0 bg-slate-50/60 dark:bg-[#12131D]">
+          <div className="px-6 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between flex-shrink-0 bg-slate-100/70 dark:bg-[#12131D]">
             <div className="flex items-center gap-1.5">
               {(['All', 'Important', 'Urgent', 'Other'] as const).map((cat) => {
                 const isActive = categoryFilter === cat;
@@ -343,7 +339,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Email List Rows */}
-          <div ref={emailListRef} className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50">
+          <div ref={emailListRef} className="flex-1 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-800/80">
             {loading ? (
               <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -376,8 +372,8 @@ export const Dashboard: React.FC = () => {
                     onClick={() => handleOpenEmail(email)}
                     className={`px-6 py-3.5 cursor-pointer transition-colors flex items-start gap-3.5 group relative ${
                       email.is_unread
-                        ? 'bg-white dark:bg-surface-darkCard border-l-[3px] border-l-brand-purple hover:bg-purple-50/20 dark:hover:bg-[#1E1F2E]'
-                        : 'bg-slate-50/30 dark:bg-[#13141E] border-l-[3px] border-l-transparent hover:bg-slate-100/60 dark:hover:bg-[#1A1B28]'
+                        ? 'bg-white dark:bg-surface-darkCard border-l-[3.5px] border-l-brand-purple hover:bg-purple-50/30 dark:hover:bg-[#1E1F2E] shadow-[0_1px_2px_rgba(0,0,0,0.02)]'
+                        : 'bg-slate-50/70 dark:bg-[#13141E] border-l-[3.5px] border-l-transparent hover:bg-slate-100 dark:hover:bg-[#1A1B28]'
                     }`}
                   >
                     {/* Monogram Avatar */}

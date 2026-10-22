@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { emailService } from '../services/email';
-import { aiService } from '../services/ai';
+import { aiService, isAiErrorMessage } from '../services/ai';
 import { settingsService } from '../services/settings';
 import { FormattedEmailBody } from './FormattedEmailBody';
 import {
@@ -24,6 +24,8 @@ import {
   PenTool,
   ChevronDown,
   Check,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface ComposeModalProps {
@@ -123,6 +125,24 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
   const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const lastPromptRef = useRef<string>('');
+
+  const handleRetryAiPrompt = (bubbleId: string) => {
+    const idx = chatMessages.findIndex((m) => m.id === bubbleId);
+    let promptToRetry = lastPromptRef.current;
+    if (idx > 0) {
+      for (let i = idx - 1; i >= 0; i--) {
+        if (chatMessages[i].role === 'user') {
+          promptToRetry = chatMessages[i].text;
+          break;
+        }
+      }
+    }
+    setChatMessages((prev) => prev.filter((m) => m.id !== bubbleId));
+    if (promptToRetry) {
+      handleSendAiPrompt(promptToRetry);
+    }
+  };
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Close model dropdown on click outside
@@ -354,11 +374,13 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
   };
 
   // Iterative chat-based draft generation
-  const handleSendAiPrompt = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const prompt = chatInput.trim();
+  const handleSendAiPrompt = async (e?: React.FormEvent | string, customPrompt?: string) => {
+    const promptOverride = typeof e === 'string' ? e : customPrompt;
+    if (e && typeof e !== 'string') e.preventDefault();
+    const prompt = (promptOverride || chatInput).trim();
     if (!prompt || isGenerating) return;
 
+    lastPromptRef.current = prompt;
     const userBubble: ChatBubble = {
       id: Date.now().toString(),
       role: 'user',
@@ -900,6 +922,34 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
             <div ref={chatScrollRef} className="flex-1 p-4 overflow-y-auto space-y-3.5">
               {chatMessages.map((msg) => {
                 const isAssistant = msg.role === 'assistant';
+
+                if (isAssistant && isAiErrorMessage(msg.text)) {
+                  return (
+                    <div key={msg.id} className="w-full my-1">
+                      <div className="p-3 rounded-2xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-2">
+                        <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>AI Generation Failed</span>
+                        </div>
+                        <div className="text-xs text-rose-700 dark:text-rose-300 font-mono leading-relaxed whitespace-pre-wrap">
+                          {msg.text}
+                        </div>
+                        <div className="pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleRetryAiPrompt(msg.id)}
+                            disabled={isGenerating}
+                            className="py-1 px-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                          >
+                            <RotateCcw className={`w-3 h-3 ${isGenerating ? 'animate-spin' : ''}`} />
+                            <span>{isGenerating ? 'Retrying...' : 'Retry'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={msg.id}

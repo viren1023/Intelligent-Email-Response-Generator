@@ -38,7 +38,7 @@ const SettingsSkeleton: React.FC = () => (
   <div className="animate-pulse space-y-6">
     {[1, 2, 3].map(i => (
       <div key={i} className="bg-white dark:bg-slate-900 rounded-3xl shadow-xs border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded-lg w-32" />
         </div>
         <div className="p-6 space-y-3">
@@ -334,7 +334,7 @@ const Settings: React.FC = () => {
               <div className="space-y-6">
                 {/* Google Account */}
                 <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+                  <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
                     <h2 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Authorized Google Account</h2>
                     <span className="text-xs bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-full font-bold">
                       Connected OAuth
@@ -362,81 +362,13 @@ const Settings: React.FC = () => {
 
                 {/* AI Provider & Models */}
                 <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
-                    <h2 className="font-bold text-slate-800 dark:text-slate-200 text-sm">AI Engine Provider</h2>
-                    <span className="text-xs bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 px-3 py-0.5 rounded-full font-bold">
-                      Active: {prefs.active_provider.toUpperCase()}
-                    </span>
+                  <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+                    <h2 className="font-bold text-slate-800 dark:text-slate-200 text-sm">AI Engine & Models</h2>
                   </div>
 
                   <div className="p-6 space-y-6">
-                    {/* Provider Selection */}
-                    <div>
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 block">
-                        Choose Active Inference Provider
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Ollama Option */}
-                        <div
-                          onClick={() => handleUpdatePreference('active_provider', 'ollama')}
-                          className={`p-4 rounded-2xl border-2 cursor-pointer transition-all duration-150 ease-out active:scale-[0.98] ${
-                            prefs.active_provider === 'ollama'
-                              ? 'border-indigo-600 bg-indigo-50/30 dark:bg-indigo-950/30 shadow-sm shadow-indigo-500/10'
-                              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 mb-1.5">
-                            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2" />
-                              </svg>
-                            </div>
-                            <h3 className="font-extrabold text-slate-900 dark:text-white text-sm">Ollama (Local LLM)</h3>
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                            Run open-source models completely offline with zero data leaving your machine.
-                          </p>
-                        </div>
-
-                        {/* Gemini Option - Disabled if no API key set */}
-                        <div
-                          onClick={() => {
-                            if (!hasGeminiKey) return;
-                            handleUpdatePreference('active_provider', 'gemini');
-                          }}
-                          className={`p-4 rounded-2xl border-2 transition-all duration-150 ease-out relative ${
-                            !hasGeminiKey
-                              ? 'opacity-60 cursor-not-allowed border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30'
-                              : prefs.active_provider === 'gemini'
-                              ? 'border-indigo-600 bg-indigo-50/30 dark:bg-indigo-950/30 shadow-sm shadow-indigo-500/10 cursor-pointer active:scale-[0.98]'
-                              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer active:scale-[0.98]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                                </svg>
-                              </div>
-                              <h3 className="font-extrabold text-slate-900 dark:text-white text-sm">Google Gemini (Cloud)</h3>
-                            </div>
-                            {!hasGeminiKey && (
-                              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                <AlertCircle className="w-2.5 h-2.5" />
-                                Key Required
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                            Ultra-fast cloud inference with Google's Gemini Flash & Pro API.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
                     {/* Ollama Default Model Selection */}
-                    <div className="border-t border-slate-100 dark:border-slate-800/80 pt-5 space-y-4">
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Default Ollama Model</p>
@@ -475,7 +407,7 @@ const Settings: React.FC = () => {
                     </div>
 
                     {/* Gemini Section & API Key */}
-                    <div className="border-t border-slate-100 dark:border-slate-800/80 pt-5 space-y-4">
+                    <div className="border-t border-slate-200 dark:border-slate-800/80 pt-5 space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Default Gemini Model</p>
@@ -588,7 +520,7 @@ const Settings: React.FC = () => {
 
                 {/* Enhanced Custom Tones Management */}
                 <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-800 overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+                  <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
                     <div>
                       <h2 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Custom Tone Presets</h2>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -723,7 +655,7 @@ const Settings: React.FC = () => {
       {isToneModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in">
           <div className="bg-white dark:bg-surface-darkCard rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                 {editingToneId ? 'Edit Custom Tone' : 'Add New Custom Tone'}
               </h3>
@@ -791,7 +723,7 @@ const Settings: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsToneModalOpen(false)}

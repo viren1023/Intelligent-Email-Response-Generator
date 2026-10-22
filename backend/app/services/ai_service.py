@@ -518,9 +518,14 @@ Requirements:
     @staticmethod
     async def classify_urgency(subject: str, snippet: str, model_name: Optional[str] = None, provider: Optional[str] = None, api_key: Optional[str] = None) -> str:
         prompt = f"""Classify the urgency of the following email into one of these three exact labels:
-- URGENT (immediate action/crisis/deadline today)
-- IMPORTANT (action required, standard priority)
-- NORMAL (informational, newsletters, low priority)
+- URGENT: immediate crisis, system outage, security breach, or deadline expiring within 24 hours.
+- IMPORTANT: direct personal or business message requiring an explicit action or reply from the recipient (e.g. client inquiry, meeting reschedule, pending invoice, manager request).
+- NORMAL: general newsletters, product/feature announcements, marketing, digests, changelogs, automated receipts, social updates, and any read-only broadcast info. Feature releases or dark mode announcements MUST ALWAYS be NORMAL.
+
+Rules:
+1. Product updates, feature announcements, and newsletters are ALWAYS NORMAL.
+2. Read-only notifications without an explicit action item are NORMAL.
+3. Only mark IMPORTANT if the email specifically asks the recipient to perform an action.
 
 Subject: {subject}
 Snippet: {snippet}

@@ -9,7 +9,7 @@
 
 @layer base {
   body {
-    background-color: #ffffff;
+    background-color: #f8fafc;
     color: #0f172a;
     font-family: "Plus Jakarta Sans", Inter, system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -39,6 +39,6 @@
     @apply bg-charcoal hover:bg-[#3B3F4E] text-white font-semibold transition-all duration-150 ease-out active:scale-[0.98] shadow-sm;
   }
   .btn-outline-pill {
-    @apply bg-white dark:bg-surface-darkCard hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/90 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-xl transition-all duration-150 ease-out active:scale-[0.98];
+    @apply bg-white dark:bg-surface-darkCard hover:bg-slate-50 dark:hover:bg-slate-800/60 border border-slate-300 dark:border-slate-700/90 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-xl transition-all duration-150 ease-out active:scale-[0.98];
   }
 }

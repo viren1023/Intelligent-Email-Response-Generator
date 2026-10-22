@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 
 interface FormattedEmailBodyProps {
   body: string;
@@ -12,25 +12,23 @@ export function cleanEmailRaw(text: string): string {
   if (!text) return '';
 
   let cleaned = text
-    // 1. Remove Outlook MSO conditional blocks: <!--[if mso]>...<![endif]-->
+    // 1. Remove Outlook MSO-only conditional blocks: <!--[if mso]>...<![endif]-->
     .replace(/<!--\[if\s+(?:gte\s+)?mso[\s\S]*?<!\[endif\]-->/gi, '')
-    // 2. Remove standalone conditional comments: <!--[if !mso]><!-->, <!--[if false]><!-->, etc.
+    // 2. Remove downlevel conditional comments cleanly without creating orphan <!-- tokens
+    .replace(/<!--\[if\s+[^\]]+\]>(?:<!-->|<!--|<!\s*)?/gi, '')
     .replace(/<!--\[if[^>]*-->/gi, '')
-    .replace(/<!--\[if[^\]]*\]>/gi, '')
     .replace(/<!--<!\[endif\]-->/gi, '')
     .replace(/<!\[endif\]-->/gi, '')
-    // 3. Remove standard HTML comments <!-- ... -->
-    .replace(/<!--[\s\S]*?-->/g, '')
-    // 4. Remove VML and Office XML tags (<v:...>, <w:...>, <o:...>)
+    // 3. Remove VML and Office XML tags (<v:...>, <w:...>, <o:...>)
     .replace(/<\/?(?:v|w|o|m|x):[^>]*>/gi, '')
     .replace(/<\?xml[^>]*\?>/gi, '')
-    // 5. Clean mangled link artifacts <[...](...)>
+    // 4. Clean mangled link artifacts <[...](...)>
     .replace(/<\[([\s\S]*?)\]\((https?:\/\/[^\s)]+)\)>/g, (_m, label, url) => {
       const urlMatch = label.match(/https?:\/\/[^\s"'<>]+/);
       const targetUrl = urlMatch ? urlMatch[0] : url.replace(/%3Cem%20class=/gi, '').trim();
       return `<${targetUrl}>`;
     })
-    // 6. Clean stale literal placeholder tokens like "( LINK_BLOCK_0 )" or "LINK_BLOCK_1"
+    // 5. Clean stale literal placeholder tokens like "( LINK_BLOCK_0 )" or "LINK_BLOCK_1"
     .replace(/\(?\s*LINK_BLOCK_\d+\s*\)?/gi, '');
 
   return cleaned;
@@ -188,14 +186,97 @@ function parseMarkdownToHtml(raw: string): string {
   return result.join('\n');
 }
 
+
+const IsolatedEmailIframe: React.FC<{ html: string }> = ({ html }) => {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeHeight, setIframeHeight] = useState<number>(240);
+
+  const preparedHtml = useMemo(() => {
+    const headInjection = `
+      <base target="_blank" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <style>
+        body {
+          margin: 0;
+          padding: 12px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          word-break: break-word;
+          overflow-wrap: break-word;
+        }
+        img { max-width: 100% !important; height: auto !important; }
+        table { max-width: 100% !important; }
+      </style>
+    `;
+    if (/<head[^>]*>/i.test(html)) {
+      return html.replace(/<head[^>]*>/i, `$&${headInjection}`);
+    } else if (/<html[^>]*>/i.test(html)) {
+      return html.replace(/<html[^>]*>/i, `$&<head>${headInjection}</head>`);
+    } else {
+      return `<!DOCTYPE html><html><head>${headInjection}</head><body>${html}</body></html>`;
+    }
+  }, [html]);
+
+  const updateHeight = () => {
+    try {
+      const doc = iframeRef.current?.contentDocument || iframeRef.current?.contentWindow?.document;
+      if (doc) {
+        const bodyH = doc.body?.scrollHeight || 0;
+        const docH = doc.documentElement?.scrollHeight || 0;
+        const finalH = Math.max(bodyH, docH, 120);
+        setIframeHeight(finalH + 16);
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  useEffect(() => {
+    updateHeight();
+    const t1 = setTimeout(updateHeight, 200);
+    const t2 = setTimeout(updateHeight, 700);
+    const t3 = setTimeout(updateHeight, 1800);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [preparedHtml]);
+
+  return (
+    <div className="w-full my-1 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700/80 bg-white shadow-xs">
+      <iframe
+        ref={iframeRef}
+        srcDoc={preparedHtml}
+        onLoad={updateHeight}
+        sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+        className="w-full border-0 block"
+        style={{ height: `${iframeHeight}px`, minHeight: '140px' }}
+        title="Email Body"
+      />
+    </div>
+  );
+};
+
 export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) => {
+  const isComplexHtml = useMemo(() => {
+    if (!body) return false;
+    const lower = body.toLowerCase();
+    return (
+      lower.includes('<table') ||
+      lower.includes('<!doctype') ||
+      lower.includes('<html') ||
+      lower.includes('<style') ||
+      lower.includes('<head') ||
+      lower.includes('<body') ||
+      lower.includes('<img')
+    );
+  }, [body]);
+
   const isHtml = useMemo(() => {
     if (!body) return false;
     const lower = body.toLowerCase();
     return (
-      lower.includes('<html') ||
-      lower.includes('<!doctype') ||
-      lower.includes('<table') ||
+      isComplexHtml ||
       lower.includes('<tbody') ||
       lower.includes('<thead') ||
       lower.includes('<tr') ||
@@ -208,12 +289,9 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
       lower.includes('<br/>') ||
       lower.includes('<br>') ||
       lower.includes('<br />') ||
-      lower.includes('<img') ||
-      lower.includes('<a href') ||
-      lower.includes('<body') ||
-      lower.includes('<style')
+      lower.includes('<a href')
     );
-  }, [body]);
+  }, [body, isComplexHtml]);
 
   const sanitizedBody = useMemo(() => {
     if (!body) return '';
@@ -224,7 +302,12 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
     return <div className="text-xs text-slate-400 italic">No content available.</div>;
   }
 
-  // If email has rich HTML format (with styling, tables, images)
+  // If email has complex rich HTML (tables, styles, images, newsletters like Wispr Flow or Google)
+  if (isComplexHtml) {
+    return <IsolatedEmailIframe html={sanitizedBody} />;
+  }
+
+  // Simple HTML snippets
   if (isHtml) {
     return (
       <div
@@ -234,7 +317,7 @@ export const FormattedEmailBody: React.FC<FormattedEmailBodyProps> = ({ body }) 
     );
   }
 
-  // Parse plain text and Markdown into formatted HTML
+  // Plain text and Markdown
   const parsedHtml = parseMarkdownToHtml(body);
 
   return (

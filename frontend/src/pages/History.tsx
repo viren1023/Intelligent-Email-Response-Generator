@@ -174,12 +174,12 @@ const History: React.FC = () => {
 
                   {/* Text snippet preview */}
                   {item.snippet && (
-                    <div className="my-2.5 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800/60 text-xs font-mono text-slate-600 dark:text-slate-300 leading-relaxed truncate">
+                    <div className="my-2.5 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-200 dark:border-slate-800/60 text-xs font-mono text-slate-600 dark:text-slate-300 leading-relaxed truncate">
                       "{item.snippet}..."
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+                  <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 dark:border-slate-800/80">
                     <div className="flex items-center gap-2">
                       {statusBadge(item.status)}
                       {item.sent_at && (
@@ -204,7 +204,7 @@ const History: React.FC = () => {
       {selectedDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -227,7 +227,7 @@ const History: React.FC = () => {
             </div>
 
             <div className="p-6 flex-1 overflow-y-auto space-y-5">
-              <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
+              <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-4 border border-slate-200 dark:border-slate-800">
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Target Subject</div>
                 <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{selectedDetail.subject}</div>
                 <div className="text-xs text-slate-500 mt-1">From: {selectedDetail.sender}</div>
@@ -250,7 +250,7 @@ const History: React.FC = () => {
               )}
             </div>
 
-            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex justify-end">
               <button
                 onClick={() => setSelectedDetail(null)}
                 className="px-5 py-2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 rounded-xl text-xs font-bold active:scale-95 transition-all shadow-xs"

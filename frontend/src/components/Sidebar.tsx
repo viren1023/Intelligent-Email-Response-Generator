@@ -70,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className={`group flex flex-col flex-shrink-0 bg-white dark:bg-surface-darkCard border-r border-slate-200/80 dark:border-slate-800/80 h-full select-none transition-[width,box-shadow] duration-500 ease-[cubic-bezier(0.2,0,0,1)] z-20 ${
+      className={`group flex flex-col flex-shrink-0 bg-slate-50/80 dark:bg-surface-darkCard border-r border-slate-200 dark:border-slate-800/80 h-full select-none transition-[width,box-shadow] duration-500 ease-[cubic-bezier(0.2,0,0,1)] z-20 ${
         isHovered ? 'w-60 shadow-xl' : 'w-[68px]'
       } overflow-x-hidden`}
     >

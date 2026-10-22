@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { emailService, type ThreadResponse, type ThreadMessage } from '../services/email';
 import { authService, type User } from '../services/auth';
 import { getCachedUser, getCachedUnreadCount, setCachedUnreadCount } from '../utils/cache';
-import { aiService } from '../services/ai';
+import { aiService, isAiErrorMessage } from '../services/ai';
 import api from '../services/api';
 import { REFERENCE_THREADS } from '../services/referenceData';
 import { getInitials, getAvatarColorClass } from '../utils/avatar';
@@ -13,6 +13,7 @@ import { Sidebar } from '../components/Sidebar';
 import { ComposeModal } from '../components/ComposeModal';
 import {
   ArrowLeft,
+  AlertTriangle,
   Sparkles,
   MessageSquare,
   Send,
@@ -32,6 +33,7 @@ import {
   RotateCcw,
   Cpu,
   ChevronDown,
+  ChevronUp,
   Wand2,
   Square,
   ArrowRight,
@@ -64,6 +66,7 @@ export const EmailView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const fromTab = location.state?.fromTab || new URLSearchParams(location.search).get('fromTab') || 'primary';
   const threadId = location.state?.threadId || (id?.includes('john') ? 'thread-john-smith-1' : 'thread-1');
 
   // Core User & Thread State
@@ -78,11 +81,22 @@ export const EmailView: React.FC = () => {
 
   // Bottom Reply Box State
   const [replyText, setReplyText] = useState('');
+  const [isReplyFocused, setIsReplyFocused] = useState(false);
+  const [allExpanded, setAllExpanded] = useState(true);
+  const [collapsedMessageIds, setCollapsedMessageIds] = useState<Record<string, boolean>>({});
+
+  const toggleMessage = (msgKey: string) => {
+    setCollapsedMessageIds((prev) => ({
+      ...prev,
+      [msgKey]: !(prev[msgKey] ?? !allExpanded),
+    }));
+  };
   const [previewReply, setPreviewReply] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [extraSentMessages, setExtraSentMessages] = useState<ThreadMessage[]>([]);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isReplyExpanded = isReplyFocused || replyText.trim().length > 0 || previewReply || attachedFiles.length > 0;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Model & Provider State
@@ -111,6 +125,12 @@ export const EmailView: React.FC = () => {
     return list;
   }, [customTones]);
 
+  const activeDefaultTone = useMemo(() => {
+    const customDef = customTones.find(ct => ct.isDefault);
+    if (customDef) return customDef.name.toLowerCase();
+    return (defaultToneName || 'professional').toLowerCase();
+  }, [customTones, defaultToneName]);
+
   // Smart Responder State
   const [responderInstruction, setResponderInstruction] = useState('');
   const [responderDraft, setResponderDraft] = useState('');
@@ -126,6 +146,21 @@ export const EmailView: React.FC = () => {
   const [chatStreamingText, setChatStreamingText] = useState('');
   const [chatPrompts, setChatPrompts] = useState<string[]>([]);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const lastChatPromptRef = useRef<string>('');
+
+  const handleRetryChat = (failedIndex: number) => {
+    let promptToRetry = lastChatPromptRef.current;
+    for (let idx = failedIndex - 1; idx >= 0; idx--) {
+      if (chatMessages[idx].role === 'user') {
+        promptToRetry = chatMessages[idx].content;
+        break;
+      }
+    }
+    setChatMessages((prev) => prev.filter((_, i) => i !== failedIndex));
+    if (promptToRetry) {
+      handleSendChat(undefined, promptToRetry);
+    }
+  };
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
   // Load User, Unread Count & Thread
@@ -476,6 +511,7 @@ export const EmailView: React.FC = () => {
     const query = (customMsg || chatInput).trim();
     if (!query || isChatStreaming) return;
 
+    lastChatPromptRef.current = query;
     if (!customMsg) setChatInput('');
     const isExplicitDraftRequest = /\b(draft|reply|respond|write\s+(a\s+)?(mail|email|response))\b/i.test(query);
 
@@ -567,9 +603,9 @@ export const EmailView: React.FC = () => {
         customCenterContent={
           <div className="flex items-center gap-2.5 w-full min-w-0">
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate(`/dashboard?tab=${fromTab}`)}
               className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex-shrink-0"
-              title="Back to inbox"
+              title={`Back to ${fromTab === 'primary' ? 'Inbox' : fromTab}`}
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -621,6 +657,7 @@ export const EmailView: React.FC = () => {
         {/* Left Sidebar */}
         <Sidebar
           user={user}
+          activeTab={fromTab as any}
           activePage="email"
           unreadCount={unreadCount}
           onOpenCompose={() => setIsComposeOpen(true)}
@@ -628,15 +665,32 @@ export const EmailView: React.FC = () => {
         />
 
         {/* Central Thread View */}
-        <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-surface-darkCard overflow-hidden">
+        <main className="flex-1 flex flex-col min-w-0 bg-slate-50/40 dark:bg-surface-darkCard overflow-hidden relative">
           {/* Messages list */}
-          <div className="flex-1 overflow-y-auto py-6 px-4 sm:px-8">
-            <div className="max-w-3xl mx-auto space-y-5">
-              {/* Divider */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700/60" />
-                <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Conversation</span>
-                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700/60" />
+          <div className="flex-1 overflow-y-auto py-6 px-4 sm:px-8 pb-28">
+            <div className="max-w-4xl mx-auto space-y-4">
+              {/* Thread Subject Header & Expand/Collapse Controller */}
+              <div className="flex items-center justify-between pb-1 px-1">
+                <div className="flex items-center gap-3 min-w-0">
+                  <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                    {subjectTitle}
+                  </h1>
+                  <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-300 flex-shrink-0">
+                    {orderedMessages.length} {orderedMessages.length === 1 ? 'message' : 'messages'}
+                  </span>
+                </div>
+                {orderedMessages.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const next = !allExpanded;
+                      setAllExpanded(next);
+                      setCollapsedMessageIds({});
+                    }}
+                    className="text-xs font-semibold text-brand-purple hover:underline flex-shrink-0 transition-colors"
+                  >
+                    {allExpanded ? 'Collapse older' : 'Expand all'}
+                  </button>
+                )}
               </div>
 
               {loading ? (
@@ -650,40 +704,111 @@ export const EmailView: React.FC = () => {
                     msg.from.toLowerCase().includes('emily') ||
                     (user?.email && msg.from.includes(user.email)) ||
                     (user?.name && msg.from.includes(user.name));
-                  const authorName = msg.from.split('<')[0].replace(/"/g, '').trim();
+                  const authorName = msg.from.split('<')[0].replace(/"/g, '').trim() || msg.from;
+                  const senderEmail = msg.from.match(/<([^>]+)>/)?.[1] || '';
+                  const msgKey = msg.id || `msg-${idx}`;
+                  const isCollapsed = !allExpanded && (collapsedMessageIds[msgKey] ?? (idx !== 0));
+
+                  if (isCollapsed) {
+                    return (
+                      <div
+                        key={msgKey}
+                        onClick={() => toggleMessage(msgKey)}
+                        className="w-full rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 p-3.5 sm:px-5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between gap-3 shadow-2xs"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {isUser && user?.picture ? (
+                            <img src={user.picture} alt={authorName} referrerPolicy="no-referrer" className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                          ) : (
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${getAvatarColorClass(authorName)}`}>
+                              {getInitials(authorName)}
+                            </div>
+                          )}
+                          <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate w-32 sm:w-44 flex-shrink-0">
+                            {isUser ? `${user?.name || authorName} (You)` : authorName}
+                          </span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1 hidden sm:inline">
+                            {msg.body?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 90) || 'No preview available'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                            {msg.date || 'Today'}
+                          </span>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
-                    <div key={msg.id || idx} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[85%] rounded-2xl p-5 space-y-3 border ${
-                        isUser
-                          ? 'bg-brand-purple/5 dark:bg-brand-purple/10 border-brand-purple/20 dark:border-brand-purple/20'
-                          : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-700/60'
-                      }`}>
-                        <div className="flex items-center justify-between gap-6">
-                          <div className="flex items-center gap-2.5">
+                    <div
+                      key={msgKey}
+                      className="w-full rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 shadow-xs overflow-hidden transition-all duration-200"
+                    >
+                      {/* Full-width Email Header */}
+                      <div className="p-4 sm:p-5 pb-3 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/40 dark:bg-slate-800/40">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 min-w-0">
                             {isUser && user?.picture ? (
-                              <img src={user.picture} alt={authorName} referrerPolicy="no-referrer" className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-200" />
+                              <img src={user.picture} alt={authorName} referrerPolicy="no-referrer" className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200 dark:ring-slate-700 flex-shrink-0 mt-0.5" />
                             ) : (
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-[11px] ${getAvatarColorClass(authorName)}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 mt-0.5 shadow-xs ${getAvatarColorClass(authorName)}`}>
                                 {getInitials(authorName)}
                               </div>
                             )}
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 block">
+
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
                                   {isUser ? `${user?.name || authorName} (You)` : authorName}
                                 </span>
+                                {senderEmail && (
+                                  <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono truncate hidden sm:inline">
+                                    &lt;{senderEmail}&gt;
+                                  </span>
+                                )}
                                 {idx === 0 && (
-                                  <span className="text-[10px] font-bold text-brand-purple bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 px-1.5 py-0.2 rounded-full">
+                                  <span className="text-[10px] font-bold text-brand-purple bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 px-2 py-0.5 rounded-full">
                                     Latest
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[11px] text-slate-400">{msg.from.match(/<([^>]+)>/)?.[1] || ''}</span>
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                to {msg.to ? msg.to.split('<')[0].replace(/"/g, '').trim() || 'me' : 'me'}
+                              </div>
                             </div>
                           </div>
-                          <span className="text-[11px] text-slate-400 dark:text-slate-500 flex-shrink-0">{msg.date || 'Today'}</span>
+
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-[11px] sm:text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                              {msg.date || 'Today'}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setIsReplyFocused(true);
+                                setTimeout(() => replyTextareaRef.current?.focus(), 60);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-brand-purple hover:bg-purple-50 dark:hover:bg-purple-950/40 transition-colors"
+                              title="Reply"
+                            >
+                              <Reply className="w-3.5 h-3.5" />
+                            </button>
+                            {orderedMessages.length > 1 && (
+                              <button
+                                onClick={() => toggleMessage(msgKey)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
+                                title="Collapse message"
+                              >
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Full-width Message Content */}
+                      <div className="p-4 sm:p-6 w-full text-slate-800 dark:text-slate-200 overflow-x-auto">
                         <FormattedEmailBody body={msg.body} />
                       </div>
                     </div>
@@ -693,141 +818,191 @@ export const EmailView: React.FC = () => {
             </div>
           </div>
 
-          {/* ── Reply Bar with Markdown Formatting Toolbar ── */}
-          <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-surface-darkCard px-4 sm:px-6 py-3">
-            <div className="max-w-3xl mx-auto">
-              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 focus-within:border-brand-purple/50 focus-within:ring-2 focus-within:ring-brand-purple/10 transition-all duration-200 overflow-hidden">
-                {/* Header bar of reply composer */}
-                <div className="flex items-center justify-between px-3.5 pt-2.5 pb-2 border-b border-slate-100 dark:border-slate-700/60 bg-white/40 dark:bg-slate-800/40">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    <Reply className="w-3.5 h-3.5 text-brand-purple" />
-                    <span>Reply to {senderName}</span>
+          {/* ── Floating Reply Composer Dock (No divider line, collapsed when idle) ── */}
+          <div className="absolute bottom-4 left-0 right-0 px-4 sm:px-6 pointer-events-none z-20 flex justify-center">
+            <div className="pointer-events-auto max-w-4xl w-full rounded-2xl border border-slate-300/90 dark:border-slate-700 bg-white/95 dark:bg-[#1E1F2E]/95 backdrop-blur-md shadow-xl shadow-slate-900/10 dark:shadow-black/50 transition-all duration-200 overflow-hidden">
+              {!isReplyExpanded ? (
+                <div
+                  onClick={() => {
+                    setIsReplyFocused(true);
+                    setTimeout(() => replyTextareaRef.current?.focus(), 60);
+                  }}
+                  className="flex items-center justify-between px-4 py-2.5 cursor-text text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors select-none"
+                >
+                  <div className="flex items-center gap-2.5 text-xs sm:text-sm">
+                    <Reply className="w-4 h-4 text-brand-purple flex-shrink-0" />
+                    <span className="font-medium text-slate-500 dark:text-slate-400">Reply to {senderName}...</span>
                   </div>
-
-                  {/* Mode switcher: Write / Preview */}
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-700/80 p-0.5 rounded-lg text-xs font-medium">
+                  <div className="flex items-center gap-2 text-slate-400">
                     <button
                       type="button"
-                      onClick={() => setPreviewReply(false)}
-                      className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
-                        !previewReply
-                          ? 'bg-white dark:bg-surface-darkCard text-slate-900 dark:text-white shadow-xs font-semibold'
-                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                      }`}
-                    >
-                      <Edit3 className="w-3 h-3" />
-                      <span>Write</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewReply(true)}
-                      className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
-                        previewReply
-                          ? 'bg-white dark:bg-surface-darkCard text-slate-900 dark:text-white shadow-xs font-semibold'
-                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                      }`}
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Preview</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Attached File Badges */}
-                {attachedFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2 px-3.5 pt-2">
-                    {attachedFiles.map((f, i) => (
-                      <div key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 text-xs text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
-                        <FileText className="w-3.5 h-3.5 text-slate-500" />
-                        <span className="truncate max-w-[150px]">{f.name}</span>
-                        <button onClick={() => handleRemoveFile(i)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 ml-1">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Editor or Preview Pane */}
-                {previewReply ? (
-                  <div className="px-4 py-3 min-h-[90px] max-h-56 overflow-y-auto text-xs sm:text-sm bg-white dark:bg-surface-darkCard">
-                    {replyText.trim() ? (
-                      <FormattedEmailBody body={replyText} />
-                    ) : (
-                      <span className="text-slate-400 italic">No content to preview yet. Write your message first.</span>
-                    )}
-                  </div>
-                ) : (
-                  <textarea
-                    ref={replyTextareaRef}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Write a clear, thoughtful reply..."
-                    rows={replyText.includes('\n') ? 5 : 3}
-                    className="w-full px-3.5 py-3 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 bg-transparent focus:outline-none resize-none leading-relaxed"
-                  />
-                )}
-
-                <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" />
-
-                {/* Formatting Toolbar */}
-                <div className="flex items-center justify-between px-3.5 py-2 border-t border-slate-100 dark:border-slate-700/60 bg-white/40 dark:bg-slate-800/20">
-                  <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
-                    <button
-                      onClick={() => insertFormatting('**', '**', 'bold')}
-                      className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
-                      title="Bold (**text**)"
-                    >
-                      <Bold className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => insertFormatting('*', '*', 'italic')}
-                      className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
-                      title="Italic (*text*)"
-                    >
-                      <Italic className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => insertFormatting('- ', '', 'list item')}
-                      className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
-                      title="Bullet list"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => insertFormatting('> ', '', 'quote')}
-                      className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
-                      title="Quote"
-                    >
-                      <Quote className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={handleInsertLink}
-                      className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
-                      title="Insert link"
-                    >
-                      <Link2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors flex items-center gap-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsReplyFocused(true);
+                        setTimeout(() => fileInputRef.current?.click(), 60);
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                       title="Attach file"
                     >
                       <Paperclip className="w-3.5 h-3.5" />
-                      <span className="text-[11px] hidden sm:inline">Attach</span>
                     </button>
+                    <span className="text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700">
+                      Write reply
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {/* Header bar of reply composer */}
+                  <div className="flex items-center justify-between px-3.5 pt-2.5 pb-2 border-b border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <Reply className="w-3.5 h-3.5 text-brand-purple" />
+                      <span>Reply to {senderName}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* Mode switcher: Write / Preview */}
+                      <div className="flex items-center bg-slate-200/80 dark:bg-slate-700/80 p-0.5 rounded-lg text-xs font-medium">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewReply(false)}
+                          className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                            !previewReply
+                              ? 'bg-white dark:bg-surface-darkCard text-slate-900 dark:text-white shadow-xs font-semibold'
+                              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                          }`}
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Write</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewReply(true)}
+                          className={`px-2.5 py-1 rounded-md transition-all flex items-center gap-1 ${
+                            previewReply
+                              ? 'bg-white dark:bg-surface-darkCard text-slate-900 dark:text-white shadow-xs font-semibold'
+                              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                          }`}
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Preview</span>
+                        </button>
+                      </div>
+
+                      {/* Collapse button when no draft text exists */}
+                      {!replyText.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsReplyFocused(false);
+                            setPreviewReply(false);
+                          }}
+                          className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700 transition-colors ml-1"
+                          title="Collapse reply box"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <button
-                    onClick={handleSendReply}
-                    disabled={!replyText.trim() || isSending}
-                    className="btn-charcoal px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 shadow-sm active:scale-[0.98] transition-all"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>{isSending ? 'Sending...' : 'Send'}</span>
-                  </button>
+                  {/* Attached File Badges */}
+                  {attachedFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-2 px-3.5 pt-2">
+                      {attachedFiles.map((f, i) => (
+                        <div key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                          <FileText className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="truncate max-w-[150px]">{f.name}</span>
+                          <button onClick={() => handleRemoveFile(i)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 ml-1">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Editor or Preview Pane */}
+                  {previewReply ? (
+                    <div className="px-4 py-3 min-h-[90px] max-h-56 overflow-y-auto text-xs sm:text-sm bg-white dark:bg-surface-darkCard">
+                      {replyText.trim() ? (
+                        <FormattedEmailBody body={replyText} />
+                      ) : (
+                        <span className="text-slate-400 italic">No content to preview yet. Write your message first.</span>
+                      )}
+                    </div>
+                  ) : (
+                    <textarea
+                      ref={replyTextareaRef}
+                      value={replyText}
+                      onFocus={() => setIsReplyFocused(true)}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="Write a clear, thoughtful reply..."
+                      rows={replyText.includes('\n') ? 5 : 3}
+                      className="w-full px-3.5 py-3 text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 bg-transparent focus:outline-none resize-none leading-relaxed"
+                    />
+                  )}
+
+                  <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="hidden" />
+
+                  {/* Formatting Toolbar */}
+                  <div className="flex items-center justify-between px-3.5 py-2 border-t border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/20">
+                    <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                      <button
+                        onClick={() => insertFormatting('**', '**', 'bold')}
+                        className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
+                        title="Bold (**text**)"
+                      >
+                        <Bold className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => insertFormatting('*', '*', 'italic')}
+                        className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
+                        title="Italic (*text*)"
+                      >
+                        <Italic className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => insertFormatting('- ', '', 'list item')}
+                        className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
+                        title="Bullet list"
+                      >
+                        <List className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => insertFormatting('> ', '', 'quote')}
+                        className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
+                        title="Quote"
+                      >
+                        <Quote className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={handleInsertLink}
+                        className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors"
+                        title="Insert link"
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-1.5 rounded-lg hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors flex items-center gap-1"
+                        title="Attach file"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        <span className="text-[11px] hidden sm:inline">Attach</span>
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={handleSendReply}
+                      disabled={!replyText.trim() || isSending}
+                      className="btn-charcoal px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 disabled:opacity-40 shadow-sm active:scale-[0.98] transition-all"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{isSending ? 'Sending...' : 'Send'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </main>
@@ -923,9 +1098,7 @@ export const EmailView: React.FC = () => {
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {allAvailableTones.map((tone) => {
                     const isSelected = responderTone.toLowerCase() === tone.toLowerCase();
-                    const isDefault =
-                      defaultToneName.toLowerCase() === tone.toLowerCase() ||
-                      customTones.some((ct) => ct.isDefault && ct.name.toLowerCase() === tone.toLowerCase());
+                    const isDefault = tone.toLowerCase() === activeDefaultTone;
 
                     return (
                       <button
@@ -1019,44 +1192,66 @@ export const EmailView: React.FC = () => {
 
               {/* Generated Draft Display Card */}
               {responderDraft && (
-                <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Draft Preview & Editor
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleCopyDraft(responderDraft)}
-                        className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                        title="Copy draft"
-                      >
-                        {replyCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                isAiErrorMessage(responderDraft) ? (
+                  <div className="p-3.5 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 space-y-2.5">
+                    <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-semibold text-xs">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span>AI Request Failed</span>
+                    </div>
+                    <p className="text-xs text-rose-700 dark:text-rose-300 leading-relaxed font-mono whitespace-pre-wrap">
+                      {responderDraft}
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
                       <button
                         onClick={() => handleGenerateSmartReply()}
-                        className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                        title="Regenerate"
+                        disabled={isGeneratingReply}
+                        className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
+                        <RotateCcw className={`w-3.5 h-3.5 ${isGeneratingReply ? 'animate-spin' : ''}`} />
+                        <span>{isGeneratingReply ? 'Retrying...' : 'Retry'}</span>
                       </button>
                     </div>
                   </div>
+                ) : (
+                  <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        Draft Preview & Editor
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleCopyDraft(responderDraft)}
+                          className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                          title="Copy draft"
+                        >
+                          {replyCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          onClick={() => handleGenerateSmartReply()}
+                          className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                          title="Regenerate"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
 
-                  <textarea
-                    value={responderDraft}
-                    onChange={(e) => setResponderDraft(e.target.value)}
-                    rows={6}
-                    className="w-full p-3 rounded-xl bg-slate-50 dark:bg-[#12131D] border border-slate-200/90 dark:border-slate-700 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-brand-purple resize-none"
-                  />
+                    <textarea
+                      value={responderDraft}
+                      onChange={(e) => setResponderDraft(e.target.value)}
+                      rows={6}
+                      className="w-full p-3 rounded-xl bg-slate-50 dark:bg-[#12131D] border border-slate-200/90 dark:border-slate-700 text-xs leading-relaxed text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-brand-purple resize-none"
+                    />
 
-                  <button
-                    onClick={() => handleInsertDraftToReply(responderDraft)}
-                    className="w-full py-2 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-brand-purple border border-purple-200 dark:border-purple-900/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                  >
-                    <span>Insert into Reply Editor</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                    <button
+                      onClick={() => handleInsertDraftToReply(responderDraft)}
+                      className="w-full py-2 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-brand-purple border border-purple-200 dark:border-purple-900/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                    >
+                      <span>Insert into Reply Editor</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )
               )}
             </div>
           )}
@@ -1091,6 +1286,33 @@ export const EmailView: React.FC = () => {
                 {/* Messages history */}
                 {chatMessages.map((msg, i) => {
                   const isAssistant = msg.role === 'assistant';
+
+                  // AI Error Card with Retry Button
+                  if (isAssistant && isAiErrorMessage(msg.content)) {
+                    return (
+                      <div key={i} className="flex flex-col items-start w-full my-1.5">
+                        <div className="w-full rounded-2xl p-3.5 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-2">
+                          <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+                            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>AI Request Failed</span>
+                          </div>
+                          <div className="text-xs text-rose-700 dark:text-rose-300 font-mono leading-relaxed whitespace-pre-wrap">
+                            {msg.content}
+                          </div>
+                          <div className="pt-1">
+                            <button
+                              onClick={() => handleRetryChat(i)}
+                              disabled={isChatStreaming}
+                              className="py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
+                            >
+                              <RotateCcw className={`w-3.5 h-3.5 ${isChatStreaming ? 'animate-spin' : ''}`} />
+                              <span>{isChatStreaming ? 'Retrying...' : 'Retry'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
 
                   // If assistant generated an email reply draft, display special elevated UI card!
                   if (isAssistant && msg.isDraft) {
